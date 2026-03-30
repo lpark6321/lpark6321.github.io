@@ -1,0 +1,88 @@
+<html>
+<head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css" integrity="sha384-xOolHFLEh07PJGoPkLv1IbcEPTNtaed2xpHsD9ESMhqIYd0nLMwNLD69Npy4HI+N" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    Hello World!@@
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        //這裡是整個Navbar的板塊，可以調整他的大小和顏色
+        <a class="navbar-brand" href="#">Navbar</a>
+        //這是最左邊的按鈕，一般會把它超連結到首頁並換成自己的LOGO
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        //這一串應該是可以指定Navbar上的元素要怎麼呈現，可以是收起來然後游標移上去才展開之類的，但我沒有改過@@
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item active">
+                    <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Link</a>
+                </li>
+                //這裡有各種類型的按鈕類型可以選，可以按自己的需求增減
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Dropdown
+                    </a>
+                    <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+                        <a class="dropdown-item" href="#">Action</a>
+                        <a class="dropdown-item" href="#">Another action</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="dropdown-item" href="#">Something else here</a>
+                    </div>
+                </li>
+                //這裡是一個下滑式選單的物件，可以把需要的連結放進去，調整他是要預設收起來之類的
+                <li class="nav-item">
+                    <a class="nav-link disabled" href="#" tabindex="-1" aria-disabled="true">Disabled</a>
+                </li>
+            </ul>
+            <form class="form-inline my-2 my-lg-0">
+                <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
+                <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
+            </form>
+            //這是一個網站內搜索的功能，但可能是比較複雜的網站才會用，我是沒有放
+        </div>
+    </nav>
+    <div id="video_container">
+        //先用個<div>
+            當作放所有影片的板塊
+            <div class="container">
+                // 接著有一個第一行的容器，我們需要三個”row”來分別擺放”標題”、影片跟”版本”
+                <div class="row">
+                    <h4>Shape of you</h4>
+                </div>
+                <div class="row">
+                    <div class="col-md-3">
+                        //這裡因為希望同一行會有四個影片，所以我們用3個column當寬度
+                        <video width="500" height="200" controls>
+                            <source src="videos/Shapeofyou1.mp4" type="video/mp4">
+                        </video>
+                        //這裡是說明如何擺進影片，我們使用video標籤加入control屬性會讓影片有可以選擇進度的控制條，不然會只能雙擊開始或暫停。video標籤內含一個source標籤指定影片地址，還有不要忘記要指定影片的編碼類型
+                        <p>Human-made accompaniment</p>
+                    </div>
+                    <div class="col-md-3">
+                        <video width="500" height="200" controls>
+                            <source src="videos/Shape of you 2.mp4" type="video/mp4">
+                        </video>
+                        <p>AI accompaniment</p>
+                    </div>
+                    <div class="col-md-3">
+                        <video width="500" height="200" controls>
+                            <source src="videos/Shape of you 3.mp4" type="video/mp4">
+                        </video>
+                        <p>Original accompaniment</p>
+                    </div>
+                    <div class="col-md-3">
+                        <video width="500" height="200" controls>
+                            <source src="videos/Shape of you 4.mp4" type="video/mp4">
+                        </video>
+                        <p>Pure vocal</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+</body>
+
+</html>
