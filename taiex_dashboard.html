@@ -1,0 +1,1101 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>?啗?疏???銵冽</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0b0d;
+    --bg-panel: #0f1117;
+    --bg-card: #141720;
+    --bg-card2: #1a1e2e;
+    --border: #1f2535;
+    --border-bright: #2a3050;
+    --gold: #f5c842;
+    --gold-dim: #a88a20;
+    --green: #00d97e;
+    --green-dim: #00a05c;
+    --red: #ff4d6a;
+    --red-dim: #cc2244;
+    --blue: #3d84ff;
+    --blue-dim: #1a5ccc;
+    --text-primary: #e8ecf5;
+    --text-secondary: #7a8aaa;
+    --text-muted: #3d4a66;
+    --accent-cyan: #00c8d4;
+    --accent-orange: #ff8c42;
+    --page-tab-active: #f5c842;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+    font-size: 12px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ?? TOP NAV ?? */
+  #top-nav {
+    display: flex;
+    align-items: stretch;
+    height: 34px;
+    background: #080a0d;
+    border-bottom: 1px solid var(--border-bright);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .page-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px;
+  }
+
+  .page-tab {
+    padding: 0 18px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s;
+    clip-path: polygon(6px 0%, 100% 0%, calc(100% - 6px) 100%, 0% 100%);
+  }
+
+  .page-tab:hover { color: var(--text-primary); border-color: var(--border-bright); }
+  .page-tab.active {
+    background: var(--gold);
+    color: #000;
+    border-color: var(--gold);
+    font-weight: 700;
+  }
+
+  .nav-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-right: 16px;
+  }
+
+  .market-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .clock {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+  }
+
+  /* ?? MAIN LAYOUT ?? */
+  #main {
+    display: grid;
+    grid-template-columns: 210px 1fr 300px;
+    grid-template-rows: 1fr 220px;
+    gap: 3px;
+    padding: 3px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ?? LEFT PANEL ?? */
+  #left-panel {
+    grid-row: 1 / 3;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 6px 10px;
+    background: var(--bg-card2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .panel-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+
+  .panel-subtitle {
+    font-size: 9px;
+    color: var(--text-muted);
+  }
+
+  /* Price highlight block */
+  .price-today {
+    padding: 10px 10px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .price-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .price-main {
+    font-size: 26px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+  }
+
+  .price-main.up { color: var(--red); }
+  .price-main.down { color: var(--green); }
+
+  .price-change {
+    font-size: 10px;
+    margin-top: 3px;
+  }
+
+  .price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  .price-row-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+  }
+
+  .price-row-val {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Key levels */
+  .key-levels {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 0.12em;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-bright);
+  }
+
+  .level-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2.5px 0;
+  }
+
+  .level-name {
+    font-size: 9px;
+    color: var(--text-secondary);
+  }
+
+  .level-val {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .level-bar-wrap {
+    flex: 1;
+    margin: 0 8px;
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .level-bar {
+    height: 100%;
+    border-radius: 1px;
+  }
+
+  /* Historical prices table */
+  .hist-prices {
+    padding: 8px 10px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .hist-prices::-webkit-scrollbar { width: 3px; }
+  .hist-prices::-webkit-scrollbar-track { background: transparent; }
+  .hist-prices::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+  .hist-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  .hist-date {
+    font-size: 9px;
+    color: var(--text-muted);
+    width: 65px;
+  }
+
+  .hist-close {
+    font-size: 10px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .hist-delta {
+    font-size: 9px;
+    text-align: right;
+    width: 50px;
+  }
+
+  /* Volatility stats */
+  .vol-stats {
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .stat-item {
+    background: var(--bg-card2);
+    border: 1px solid var(--border);
+    padding: 4px 6px;
+  }
+
+  .stat-label {
+    font-size: 8px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+
+  .stat-val {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+  }
+
+  /* ?? CENTER CHART ?? */
+  #center-chart {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .chart-header {
+    padding: 6px 12px;
+    background: var(--bg-card2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .chart-symbol {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.05em;
+  }
+
+  .chart-interval {
+    font-size: 9px;
+    color: var(--text-secondary);
+  }
+
+  .ohlc-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .ohlc-item { display: flex; align-items: center; gap: 4px; }
+  .ohlc-label { font-size: 8px; color: var(--text-muted); }
+  .ohlc-val { font-size: 11px; font-weight: 600; font-family: 'JetBrains Mono'; }
+
+  .price-badge {
+    padding: 2px 10px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono';
+  }
+
+  .price-badge.sell { background: var(--red); color: #fff; }
+  .price-badge.buy  { background: var(--green); color: #000; }
+
+  .chart-timeframes {
+    margin-left: auto;
+    display: flex;
+    gap: 2px;
+  }
+
+  .tf-btn {
+    padding: 2px 8px;
+    font-size: 9px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .tf-btn:hover { color: var(--text-primary); border-color: var(--border-bright); }
+  .tf-btn.active { background: var(--gold); color: #000; border-color: var(--gold); font-weight: 700; }
+
+  /* TradingView embed wrapper */
+  .tradingview-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .tradingview-wrap iframe {
+    width: 100%; height: 100%;
+    border: none;
+  }
+
+  /* Placeholder chart (when TV not loaded) */
+  .chart-placeholder {
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-panel);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .tv-logo {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* Fake candlestick SVG chart */
+  .chart-svg-wrap {
+    width: 100%; height: 100%;
+  }
+
+  /* ?? RIGHT PANEL ?? */
+  #right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+  }
+
+  #right-top {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  #right-bottom {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border: 2px solid var(--border-bright);
+    height: 140px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .tbd-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .tbd-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .tbd-icon {
+    font-size: 20px;
+    opacity: 0.3;
+  }
+
+  /* Mini charts for right-top */
+  .mini-chart-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .mini-tab {
+    padding: 5px 10px;
+    font-size: 9px;
+    cursor: pointer;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+    transition: all 0.15s;
+    flex: 1;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+
+  .mini-tab.active { color: var(--gold); background: rgba(245,200,66,0.05); }
+  .mini-tab:hover { color: var(--text-primary); }
+
+  .mini-chart-content {
+    flex: 1;
+    padding: 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .mini-chart-content::-webkit-scrollbar { width: 3px; }
+  .mini-chart-content::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+  .mini-symbol-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    cursor: pointer;
+    transition: background 0.1s;
+    border-radius: 2px;
+    padding: 4px 4px;
+  }
+
+  .mini-symbol-row:hover { background: rgba(255,255,255,0.03); }
+
+  .mini-sym-name { font-size: 10px; font-weight: 600; color: var(--text-primary); }
+  .mini-sym-sub  { font-size: 8px; color: var(--text-muted); }
+
+  .mini-sparkline { width: 70px; height: 28px; }
+
+  .mini-price { text-align: right; }
+  .mini-price-val { font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono'; }
+  .mini-price-chg { font-size: 9px; }
+
+  /* ?? BOTTOM PANEL ?? */
+  #bottom-panel {
+    grid-column: 2 / 3;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .bottom-tabs {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card2);
+    flex-shrink: 0;
+    padding: 0 8px;
+    gap: 0;
+  }
+
+  .bottom-tab {
+    padding: 5px 14px;
+    font-size: 9px;
+    cursor: pointer;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .bottom-tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .bottom-tab:hover { color: var(--text-primary); }
+
+  .bottom-content {
+    flex: 1;
+    display: flex;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* Stock cards */
+  .stock-cards {
+    display: flex;
+    gap: 3px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    align-items: stretch;
+    flex: 1;
+  }
+
+  .stock-cards::-webkit-scrollbar { height: 3px; }
+  .stock-cards::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+  .stock-card {
+    flex-shrink: 0;
+    width: 130px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: border-color 0.15s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stock-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px; height: 100%;
+  }
+
+  .stock-card.up::before { background: var(--red); }
+  .stock-card.down::before { background: var(--green); }
+
+  .stock-card:hover { border-color: var(--border-bright); }
+
+  .sc-code { font-size: 11px; font-weight: 700; color: var(--text-primary); }
+  .sc-name { font-size: 8px; color: var(--text-muted); }
+  .sc-price {
+    font-size: 16px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+  }
+  .sc-price.up { color: var(--red); }
+  .sc-price.down { color: var(--green); }
+
+  .sc-chg { font-size: 9px; }
+  .sc-chg.up { color: var(--red); }
+  .sc-chg.down { color: var(--green); }
+
+  .sc-spark { width: 100%; height: 30px; margin-top: 2px; }
+
+  .sc-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8px;
+    color: var(--text-muted);
+  }
+
+  /* Scrollbar global */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+  /* Glow effects */
+  .glow-red  { text-shadow: 0 0 8px rgba(255,77,106,0.5); }
+  .glow-green{ text-shadow: 0 0 8px rgba(0,217,126,0.5); }
+  .glow-gold { text-shadow: 0 0 8px rgba(245,200,66,0.5); }
+
+  /* Intraday mini line */
+  .intraday-mini {
+    width: 100%;
+    padding: 0 8px 4px;
+    flex-shrink: 0;
+  }
+
+  /* codex overrides */
+  body, body * { font-size: 18px !important; }
+  .page-tabs { display: none !important; }
+  #top-nav { justify-content: flex-end; }
+  #left-panel, #center-chart, #right-top, #right-bottom, #bottom-panel {
+    resize: both;
+    overflow: auto;
+    min-width: 260px;
+    min-height: 180px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ?? TOP NAV ?? -->
+<div id="top-nav">
+  <div class="page-tabs">
+    <div class="page-tab active">PAGE 1 繚 ?疏蝮質汗</div>
+    <div class="page-tab">PAGE 2 繚 ?豢?甈?/div>
+    <div class="page-tab">PAGE 3 繚 ???</div>
+    <div class="page-tab">PAGE 4 繚 蝐Ⅳ??</div>
+  </div>
+  <div class="nav-right">
+    <div class="market-status">
+      <div class="status-dot"></div>
+      <span>?支葉鈭斗?</span>
+    </div>
+    <div class="clock" id="clock">14:32:01</div>
+  </div>
+</div>
+
+<!-- ?? MAIN ?? -->
+<div id="main">
+
+  <!-- LEFT PANEL: Key prices + history -->
+  <div id="left-panel">
+    <div class="panel-header">
+      <span class="panel-title">?唳???/span>
+      <span class="panel-subtitle">TAIEX Futures 繚 餈?</span>
+    </div>
+
+    <!-- Today's key prices -->
+    <div class="price-today">
+      <div class="price-label">?曉 繚 LAST</div>
+      <div class="price-main up glow-red" id="live-price">32,407</div>
+      <div class="price-change" style="color:var(--red)">??73 pts &nbsp;(??.22%)</div>
+      <div style="margin-top:8px">
+        <div class="price-row">
+          <span class="price-row-label">隞?</span>
+          <span class="price-row-val" style="color:var(--text-primary)">32,649</span>
+        </div>
+        <div class="price-row">
+          <span class="price-row-label">隞?擃?/span>
+          <span class="price-row-val" style="color:var(--red)">32,858</span>
+        </div>
+        <div class="price-row">
+          <span class="price-row-label">隞?雿?/span>
+          <span class="price-row-val" style="color:var(--green)">32,282</span>
+        </div>
+        <div class="price-row">
+          <span class="price-row-label">?冽?嗥</span>
+          <span class="price-row-val" style="color:var(--text-secondary)">32,480</span>
+        </div>
+        <div class="price-row">
+          <span class="price-row-label">?漱??/span>
+          <span class="price-row-val" style="color:var(--accent-cyan)">188.0K</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key support/resistance levels -->
+    <div class="key-levels">
+      <div class="section-title">憭?∪</div>
+      <div class="level-row">
+        <span class="level-name">?∪5</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:85%;background:var(--red)"></div></div>
+        <span class="level-val" style="color:var(--red)">24,428</span>
+      </div>
+      <div class="level-row">
+        <span class="level-name">?∪4</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:72%;background:var(--red)"></div></div>
+        <span class="level-val" style="color:var(--red)">24,276</span>
+      </div>
+      <div class="level-row">
+        <span class="level-name">?∪3</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:60%;background:var(--red)"></div></div>
+        <span class="level-val" style="color:var(--red)">24,167</span>
+      </div>
+      <div class="level-row">
+        <span class="level-name">?∪1</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:32%;background:var(--red)"></div></div>
+        <span class="level-val" style="color:var(--red)">24,054</span>
+      </div>
+      <div class="section-title" style="margin-top:8px">蝛箸?∪</div>
+      <div class="level-row">
+        <span class="level-name">?∪1</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:75%;background:var(--green)"></div></div>
+        <span class="level-val" style="color:var(--green)">24,023</span>
+      </div>
+      <div class="level-row">
+        <span class="level-name">?∪3</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:55%;background:var(--green)"></div></div>
+        <span class="level-val" style="color:var(--green)">23,910</span>
+      </div>
+      <div class="level-row">
+        <span class="level-name">?∪5</span>
+        <div class="level-bar-wrap"><div class="level-bar" style="width:30%;background:var(--green)"></div></div>
+        <span class="level-val" style="color:var(--green)">23,649</span>
+      </div>
+    </div>
+
+    <!-- Historical close prices -->
+    <div class="hist-prices">
+      <div class="section-title">餈??嗥</div>
+      <div id="hist-list">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Volatility stats -->
+    <div class="vol-stats">
+      <div class="section-title">?臬?蝯梯? (餈?0??</div>
+      <div class="stat-grid">
+        <div class="stat-item">
+          <div class="stat-label">?憭扳撟?/div>
+          <div class="stat-val" style="color:var(--red)">427</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">憭扳撟?/div>
+          <div class="stat-val" style="color:var(--accent-orange)">275</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">撟喳??臬?</div>
+          <div class="stat-val" style="color:var(--gold)">166</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">隞??臬?</div>
+          <div class="stat-val" style="color:var(--accent-cyan)">75</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENTER CHART -->
+  <div id="center-chart">
+    <div class="chart-header">
+      <div>
+        <div class="chart-symbol">TAIEX FUTURES &nbsp;<span style="color:var(--text-muted);font-size:11px">繚</span>&nbsp; <span style="color:var(--gold)">32,407</span></div>
+        <div class="chart-interval" style="margin-top:1px">?啁????疏 繚 餈???</div>
+      </div>
+      <div class="ohlc-row" style="margin-left:12px">
+        <div class="ohlc-item"><span class="ohlc-label">??/span><span class="ohlc-val">32,649</span></div>
+        <div class="ohlc-item"><span class="ohlc-label">擃?/span><span class="ohlc-val" style="color:var(--red)">32,858</span></div>
+        <div class="ohlc-item"><span class="ohlc-label">雿?/span><span class="ohlc-val" style="color:var(--green)">32,282</span></div>
+        <div class="ohlc-item"><span class="ohlc-label">??/span><span class="ohlc-val" style="color:var(--red)">32,407</span></div>
+        <div class="ohlc-item"><span class="ohlc-label" style="color:var(--red)">??73 (??.22%)</span></div>
+      </div>
+      <div class="chart-timeframes">
+        <button class="tf-btn">1m</button>
+        <button class="tf-btn">5m</button>
+        <button class="tf-btn">15m</button>
+        <button class="tf-btn">1h</button>
+        <button class="tf-btn active">D</button>
+        <button class="tf-btn">W</button>
+      </div>
+    </div>
+
+    <!-- TradingView Widget -->
+    <div class="tradingview-wrap">
+      <div id="tradingview-container" style="width:100%;height:100%"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <!-- Right Top: Mini charts / watchlist -->
+    <div id="right-top">
+      <div class="panel-header">
+        <span class="panel-title">??韏啣</span>
+      </div>
+      <div class="mini-chart-tabs">
+        <div class="mini-tab active">M7 ?仕</div>
+        <div class="mini-tab">30?</div>
+        <div class="mini-tab">5?</div>
+        <div class="mini-tab">?芷</div>
+      </div>
+      <div class="mini-chart-content" id="mini-charts">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Right Bottom: TBD -->
+    <div id="right-bottom">
+      <div class="panel-header">
+        <span class="panel-title" style="color:var(--text-muted)">敺??憛?/span>
+        <span class="panel-subtitle">繚 Right Bottom</span>
+      </div>
+      <div class="tbd-content">
+        <div class="tbd-icon">??/div>
+        <div class="tbd-label">?敺?</div>
+        <div style="font-size:8px;color:var(--text-muted);margin-top:4px">?舫?蝵桃嚗?閮倏 / ?啗???/ ?豢?甈?</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM PANEL: Top weighted stocks -->
+  <div id="bottom-panel">
+    <div class="bottom-tabs">
+      <div class="bottom-tab active">?啗甈潸?支葉韏啣</div>
+      <div class="bottom-tab">ETF</div>
+      <div class="bottom-tab">???</div>
+      <div class="bottom-tab">憭???</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding-right:4px">
+        <span style="font-size:8px;color:var(--text-muted)">?芸??湔</span>
+        <span style="font-size:8px;color:var(--green)">???單?</span>
+      </div>
+    </div>
+    <div class="bottom-content">
+      <div class="stock-cards" id="stock-cards">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ?? Clock ??
+function updateClock() {
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    String(d.getHours()).padStart(2,'0') + ':' +
+    String(d.getMinutes()).padStart(2,'0') + ':' +
+    String(d.getSeconds()).padStart(2,'0');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ?? Page tabs ??
+document.querySelectorAll('.page-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.page-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+  });
+});
+
+// ?? TF buttons ??
+document.querySelectorAll('.tf-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tf-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
+
+// ?? Mini chart tabs ??
+document.querySelectorAll('.mini-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.mini-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+  });
+});
+
+// ?? Bottom tabs ??
+document.querySelectorAll('.bottom-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.bottom-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+  });
+});
+
+// ?? Historical prices ??
+const histData = [
+  { date:'03/28', close:32480, delta:+120 },
+  { date:'03/27', close:32360, delta:+95 },
+  { date:'03/26', close:32265, delta:-210 },
+  { date:'03/25', close:32475, delta:+180 },
+  { date:'03/24', close:32295, delta:-88 },
+  { date:'03/21', close:32383, delta:+156 },
+  { date:'03/20', close:32227, delta:-342 },
+  { date:'03/19', close:32569, delta:+223 },
+  { date:'03/18', close:32346, delta:-115 },
+  { date:'03/17', close:32461, delta:+289 },
+  { date:'03/14', close:32172, delta:-198 },
+  { date:'03/13', close:32370, delta:+401 },
+  { date:'03/12', close:31969, delta:-87  },
+];
+
+const histList = document.getElementById('hist-list');
+histData.forEach(r => {
+  const up = r.delta >= 0;
+  histList.innerHTML += `
+    <div class="hist-row">
+      <span class="hist-date">${r.date}</span>
+      <span class="hist-close" style="color:${up?'var(--red)':'var(--green)'}">${r.close.toLocaleString()}</span>
+      <span class="hist-delta" style="color:${up?'var(--red)':'var(--green)'}">${up?'??:'??} ${Math.abs(r.delta)}</span>
+    </div>`;
+});
+
+// ?? Sparkline helper ??
+function makeSpark(data, color, up) {
+  const min = Math.min(...data), max = Math.max(...data);
+  const w = 70, h = 28, pad = 2;
+  const xs = data.map((_,i) => pad + i*(w-pad*2)/(data.length-1));
+  const ys = data.map(v => h - pad - (v-min)/(max-min||1)*(h-pad*2));
+  const pts = xs.map((x,i) => `${x},${ys[i]}`).join(' ');
+  const fillPts = `${xs[0]},${h} ` + pts + ` ${xs[xs.length-1]},${h}`;
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+    <defs>
+      <linearGradient id="sg${color.replace('#','')}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <polygon points="${fillPts}" fill="url(#sg${color.replace('#','')})" />
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.2"/>
+    <circle cx="${xs[xs.length-1]}" cy="${ys[ys.length-1]}" r="2" fill="${color}"/>
+  </svg>`;
+}
+
+// ?? Mini charts (right panel) ??
+const miniSymbols = [
+  { code:'TSMC', name:'?啁???2330', price:972, chg:+1.56, data:[890,900,910,920,930,945,960,955,965,972] },
+  { code:'FOXC', name:'暾餅絲 2317',   price:215, chg:-0.46, data:[218,217,216,217,215,214,215,215,214,215] },
+  { code:'CTBC', name:'銝凋縑??2891', price:43.5, chg:+0.81, data:[42,42.5,43,42.8,43.2,43.5,43.3,43.6,43.4,43.5] },
+  { code:'UMC',  name:'?舫 2303',   price:48.2, chg:+1.26, data:[46,46.5,47,47.5,47.8,48,47.9,48.1,48.0,48.2] },
+  { code:'DELTA',name:'?圈???2308', price:385,  chg:-0.52, data:[390,389,388,387,386,385,386,384,385,385] },
+  { code:'ASE',  name:'?交???3711', price:158,  chg:+0.64, data:[154,155,156,157,156,157,158,157,158,158] },
+];
+
+const miniCont = document.getElementById('mini-charts');
+miniSymbols.forEach(s => {
+  const up = s.chg >= 0;
+  const color = up ? '#ff4d6a' : '#00d97e';
+  miniCont.innerHTML += `
+    <div class="mini-symbol-row">
+      <div>
+        <div class="mini-sym-name">${s.code}</div>
+        <div class="mini-sym-sub">${s.name}</div>
+      </div>
+      <div class="mini-sparkline">${makeSpark(s.data, color, up)}</div>
+      <div class="mini-price">
+        <div class="mini-price-val" style="color:${color}">${s.price}</div>
+        <div class="mini-price-chg" style="color:${color}">${up?'??:'??} ${Math.abs(s.chg)}%</div>
+      </div>
+    </div>`;
+});
+
+// ?? Bottom stock cards ??
+const stocks = [
+  { code:'2330', name:'?啁???, price:972.0, chg:+15.0, pct:+1.57, vol:'58.2K', data:[920,930,940,945,955,960,958,965,970,972] },
+  { code:'2317', name:'暾餅絲',   price:215.0, chg:-1.0,  pct:-0.46, vol:'42.1K', data:[218,217,216,217,215,214,215,214,215,215] },
+  { code:'2454', name:'?舐蝘?, price:1125,  chg:+22,   pct:+2.00, vol:'12.8K', data:[1080,1090,1095,1100,1105,1110,1115,1118,1122,1125] },
+  { code:'2891', name:'銝凋縑??, price:43.5,  chg:+0.35, pct:+0.81, vol:'88.5K', data:[42,42.5,43,42.8,43.2,43.4,43.3,43.5,43.4,43.5] },
+  { code:'2881', name:'撖??, price:95.3,  chg:+0.7,  pct:+0.74, vol:'31.2K', data:[93,93.5,94,94.2,94.5,94.8,95,95.1,95.2,95.3] },
+  { code:'2303', name:'?舫',   price:48.2,  chg:+0.6,  pct:+1.26, vol:'95.4K', data:[46,46.5,47,47.5,47.8,48,47.9,48.1,48.0,48.2] },
+  { code:'2308', name:'?圈???, price:385,   chg:-2.0,  pct:-0.52, vol:'8.9K',  data:[390,389,388,387,386,385,386,384,385,385] },
+  { code:'3711', name:'?交???, price:158,   chg:+1.0,  pct:+0.64, vol:'22.1K', data:[154,155,156,157,156,157,158,157,158,158] },
+  { code:'2882', name:'?陸??, price:67.8,  chg:-0.3,  pct:-0.44, vol:'45.3K', data:[69,68.5,68,67.8,68,67.9,67.8,67.9,67.7,67.8] },
+  { code:'2886', name:'????, price:42.1,  chg:+0.2,  pct:+0.48, vol:'38.7K', data:[41,41.2,41.5,41.7,41.8,41.9,42,42.0,42.1,42.1] },
+];
+
+const cardsCont = document.getElementById('stock-cards');
+stocks.forEach(s => {
+  const up = s.chg >= 0;
+  const color = up ? '#ff4d6a' : '#00d97e';
+  cardsCont.innerHTML += `
+    <div class="stock-card ${up?'up':'down'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="sc-code">${s.code}</div>
+          <div class="sc-name">${s.name}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="sc-price ${up?'up':'down'}">${s.price}</div>
+          <div class="sc-chg ${up?'up':'down'}">${up?'??:'??} ${Math.abs(s.pct)}%</div>
+        </div>
+      </div>
+      <div class="sc-spark">${makeSpark(s.data, color, up)}</div>
+      <div class="sc-meta">
+        <span>${up?'+':''}${s.chg}</span>
+        <span>??${s.vol}</span>
+      </div>
+    </div>`;
+});
+
+// ?? TradingView Widget ??
+const script = document.createElement('script');
+script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+script.async = true;
+script.innerHTML = JSON.stringify({
+  "autosize": true,
+  "symbol": "TWSE:TX1!",
+  "interval": "D",
+  "timezone": "Asia/Taipei",
+  "theme": "dark",
+  "style": "1",
+  "locale": "zh_TW",
+  "backgroundColor": "rgba(15, 17, 23, 1)",
+  "gridColor": "rgba(31, 37, 53, 0.6)",
+  "hide_top_toolbar": false,
+  "hide_legend": false,
+  "save_image": false,
+  "calendar": false,
+  "hide_volume": false,
+  "support_host": "https://www.tradingview.com"
+});
+
+const tvContainer = document.getElementById('tradingview-container');
+const tvWidget = document.createElement('div');
+tvWidget.className = 'tradingview-widget-container';
+tvWidget.style.cssText = 'width:100%;height:100%';
+const tvInner = document.createElement('div');
+tvInner.className = 'tradingview-widget-container__widget';
+tvInner.style.cssText = 'width:100%;height:100%';
+tvWidget.appendChild(tvInner);
+tvWidget.appendChild(script);
+tvContainer.appendChild(tvWidget);
+
+// ?? Simulated price tick ??
+let basePrice = 32407;
+setInterval(() => {
+  const delta = Math.floor((Math.random()-0.5)*6);
+  basePrice += delta;
+  const el = document.getElementById('live-price');
+  if (el) el.textContent = basePrice.toLocaleString();
+}, 1800);
+</script>
+</body>
+</html>
+
+

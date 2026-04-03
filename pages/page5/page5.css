@@ -1,0 +1,2 @@
+﻿.p5-grid { display:grid; grid-template-columns: 320px 1fr; gap:8px; }
+.p5-right { display:grid; grid-template-rows: 1fr auto; gap:8px; min-height:640px; }
