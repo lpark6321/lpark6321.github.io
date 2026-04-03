@@ -1,0 +1,50 @@
+﻿.p6-grid {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+  min-height: calc(100vh - 170px);
+}
+
+.p6-topbar-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.p6-sectors,
+.p6-viewmode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.p6-sectors button.is-active {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.p6-map-panel .panel__body {
+  padding: 0;
+  height: 68vh;
+  min-height: 520px;
+}
+
+.p6-map-wrap {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.p6-pie-wrap {
+  width: 100%;
+  height: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.p6-detail {
+  font-size: 18px;
+  color: var(--text2);
+}

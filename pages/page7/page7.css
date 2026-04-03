@@ -1,0 +1,13 @@
+﻿.p7-grid { display:grid; grid-template-rows: auto auto auto auto auto; gap:12px; }
+.p7-section-title {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-left: 4px solid var(--gold);
+  background: var(--card2);
+  font-weight: 700;
+}
+.p7-cards {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(390px, 1fr));
+  gap:12px;
+}
