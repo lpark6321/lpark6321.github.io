@@ -3,6 +3,7 @@ import { getMarketStatus } from './marketCalendar.js';
 
 let tickTimer = null;
 let globalTimer = null;
+let marketMapTimer = null;
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
@@ -119,4 +120,72 @@ export function stopGlobalSimulator() {
   if (!globalTimer) return;
   clearInterval(globalTimer);
   globalTimer = null;
+}
+
+// Simulate Taiwan stock market prices for treemap (page6)
+export function simulateMarketMap() {
+  if (marketMapTimer) return;
+
+  // Import here to avoid blocking initial page load
+  import('../data/twStocks.js').then(mod => {
+    const { TW_STOCK_UNIVERSE, SECTOR_ORDER } = mod;
+
+    // Initialize sector trends (sector-wide drift)
+    const sectorTrends = {};
+    SECTOR_ORDER.forEach(sector => {
+      sectorTrends[sector] = (Math.random() - 0.5) * 4; // -2% to +2% sector trend
+    });
+
+    marketMapTimer = setInterval(() => {
+      const marketMap = TW_STOCK_UNIVERSE.map(stock => {
+        // Get current price from store or initialize
+        const current = store.get('marketMap')?.find(m => m.code === stock.code) || {
+          price: Math.random() * 200 + 50,
+          changePct: 0,
+          change5d: 0,
+          volume: Math.random() * 1e7,
+          volRatio: Math.random() * 3
+        };
+
+        // Apply sector trend + random walk
+        const sectorDrift = sectorTrends[stock.sector] || 0;
+        const individualDrift = (Math.random() - 0.5) * 3;
+        const priceDrift = (sectorDrift + individualDrift) * 0.1;
+
+        const newPrice = Math.max(10, current.price * (1 + priceDrift / 100));
+        const newChangePct = +(priceDrift * (Math.random() + 0.5)).toFixed(2);
+        const newChange5d = +((newChangePct + (Math.random() - 0.5) * 4).toFixed(2));
+
+        return {
+          code: stock.code,
+          name: stock.name,
+          sector: stock.sector,
+          subSector: stock.subSector,
+          marketCap: stock.marketCap,
+          isIn0050: stock.isIn0050,
+          price: +newPrice.toFixed(2),
+          changePct: +newChangePct.toFixed(2),
+          change5d: +newChange5d.toFixed(2),
+          volume: Math.round(current.volume * (0.8 + Math.random() * 0.4)),
+          volRatio: +(current.volRatio * (0.7 + Math.random() * 0.6)).toFixed(2)
+        };
+      });
+
+      store.set('marketMap', marketMap);
+
+      // Update sector trends periodically (every 30 seconds)
+      if (Math.random() < 0.1) {
+        SECTOR_ORDER.forEach(sector => {
+          sectorTrends[sector] += (Math.random() - 0.5) * 0.5;
+          sectorTrends[sector] = Math.max(-5, Math.min(5, sectorTrends[sector]));
+        });
+      }
+    }, 5000); // Update every 5 seconds
+  });
+}
+
+export function stopMarketMapSimulator() {
+  if (!marketMapTimer) return;
+  clearInterval(marketMapTimer);
+  marketMapTimer = null;
 }

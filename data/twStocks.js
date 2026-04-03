@@ -52,9 +52,6 @@ export const TW_STOCK_UNIVERSE = [
   { code: '2609', name: '陽明', sector: '航運', subSector: '貨運', marketCap: 280, isIn0050: false },
   { code: '2615', name: '萬海', sector: '航運', subSector: '貨運', marketCap: 190, isIn0050: false },
 
-  // ── 傳媒 ──
-  { code: '2891', name: '中信金', sector: '金融', subSector: '金控', marketCap: 320, isIn0050: false },
-
   // ── ETF ──
   { code: '0050', name: '元大台灣50', sector: 'ETF', subSector: '寬基', marketCap: 3200, isIn0050: false },
   { code: '0056', name: '元大高股息', sector: 'ETF', subSector: '高息', marketCap: 1800, isIn0050: false },

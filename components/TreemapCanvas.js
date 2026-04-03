@@ -1,126 +1,341 @@
-﻿function colorByPct(pct) {
-  if (pct > 3) return '#c0392b';
-  if (pct > 1) return '#e74c3c';
-  if (pct > 0) return '#f1948a';
-  if (pct === 0) return '#2a3550';
-  if (pct > -1) return '#82e0aa';
-  if (pct > -3) return '#27ae60';
-  return '#1a5c35';
-}
+﻿// Canvas-based Treemap Renderer
+// Handles rendering, mouse interaction, and real-time updates
 
-function makeSquares(items, width, height, sizeBy) {
-  const total = items.reduce((s, x) => s + Math.max(1, x[sizeBy] || x.marketCap || 1), 0) || 1;
-  const area = width * height;
-  const withSize = items.map((x) => ({ ...x, side: Math.sqrt((Math.max(1, x[sizeBy] || x.marketCap || 1) / total) * area) }));
-
-  let x = 0;
-  let y = 0;
-  let rowH = 0;
-  const boxes = [];
-
-  withSize.forEach((it) => {
-    const side = Math.max(18, it.side);
-    if (x + side > width) {
-      x = 0;
-      y += rowH;
-      rowH = 0;
-    }
-
-    if (y + side > height) return;
-
-    boxes.push({ ...it, x, y, w: side, h: side });
-    x += side;
-    rowH = Math.max(rowH, side);
-  });
-
-  return boxes;
-}
+import { layoutWithGroups, computeSectorAvg, SECTOR_HEADER_HEIGHT_CONST } from './TreemapLayout.js'
+import { SECTOR_COLORS } from '../data/twStocks.js'
 
 export class TreemapCanvas {
-  constructor(container, options = {}) {
-    this.container = container;
-    this.canvas = document.createElement('canvas');
-    this.canvas.width = options.width || 1200;
-    this.canvas.height = options.height || 680;
-    this.ctx = this.canvas.getContext('2d');
-    container.appendChild(this.canvas);
+  constructor(container) {
+    this.container = container
+    this.canvas = document.createElement('canvas')
+    this.canvas.style.cssText = 'display:block;width:100%;height:100%;cursor:crosshair'
+    container.appendChild(this.canvas)
 
-    this.onClick = options.onClick || (() => {});
-    this.boxes = [];
-    this.lastData = [];
-    this.lastOpts = {};
+    this.layout = []        // current computed layout
+    this.hoveredStock = null
+    this.searchQuery = ''
+    this.colorMetric = 'changePct'
+    this.sizeMetric = 'marketCap'
+    this.groupMode = 'sector'
 
-    this.canvas.addEventListener('click', (e) => this.handleClick(e));
-    this.resizeObserver = new ResizeObserver(() => this.redraw());
-    this.resizeObserver.observe(container);
+    this._bindEvents()
+    this._resizeObserver = new ResizeObserver(() => this.render())
+    this._resizeObserver.observe(container)
   }
 
-  resizeToContainer() {
-    const rect = this.container.getBoundingClientRect();
-    const w = Math.max(520, Math.floor(rect.width));
-    const h = Math.max(420, Math.floor(rect.height));
-    if (this.canvas.width !== w || this.canvas.height !== h) {
-      this.canvas.width = w;
-      this.canvas.height = h;
+  update(stocks) {
+    // stocks: merged data from store (static universe + live prices)
+    this.stocks = stocks
+    this._computeLayout()
+    this.render()
+  }
+
+  setColorMetric(metric) {
+    // metric: 'changePct' | 'change5d' | 'volRatio'
+    this.colorMetric = metric
+    this.render()  // no re-layout needed, just re-color
+  }
+
+  setSizeMetric(metric) {
+    // metric: 'marketCap' | 'volume'
+    this.sizeMetric = metric
+    this._computeLayout()  // size change requires re-layout
+    this.render()
+  }
+
+  setGroupMode(mode) {
+    // mode: 'sector' | '0050' | 'etf' | 'none'
+    this.groupMode = mode
+    this._computeLayout()
+    this.render()
+  }
+
+  setSearchQuery(query) {
+    this.searchQuery = query.toUpperCase()
+    this.render()  // search highlighting doesn't need re-layout
+  }
+
+  _computeLayout() {
+    // Force re-measure container dimensions
+    const W = this.container.offsetWidth
+    const H = this.container.offsetHeight
+    if (!W || !H || !this.stocks) return
+
+    // Group stocks based on mode
+    const grouped = this._groupStocks(this.stocks)
+
+    // Compute squarified layout
+    this.layout = layoutWithGroups(grouped, W, H)
+  }
+
+  _groupStocks(stocks) {
+    switch (this.groupMode) {
+      case 'sector':
+        return this._groupBySector(stocks)
+      case '0050':
+        return this._groupBy0050(stocks)
+      case 'etf':
+        return this._groupByETF(stocks)
+      case 'none':
+        // Single group with all stocks, sorted by size
+        const all = [...stocks].sort((a, b) => (b[this.sizeMetric] || 0) - (a[this.sizeMetric] || 0))
+        return [{ name: '全市場', stocks: all }]
+      default:
+        return this._groupBySector(stocks)
     }
   }
 
-  update(data, opts = {}) {
-    this.lastData = data || [];
-    this.lastOpts = opts || {};
-    this.redraw();
+  _groupBySector(stocks) {
+    const map = new Map()
+    stocks.forEach(s => {
+      const sector = s.sector || '其他'
+      if (!map.has(sector)) map.set(sector, [])
+      map.get(sector).push(s)
+    })
+    return Array.from(map.entries()).map(([name, stocks]) => ({
+      name,
+      stocks: stocks.sort((a, b) => (b[this.sizeMetric] || 0) - (a[this.sizeMetric] || 0))
+    }))
   }
 
-  redraw() {
-    this.resizeToContainer();
-    const { sizeBy = 'marketCap', colorBy = 'changePct', search = '' } = this.lastOpts;
-    const items = [...this.lastData].sort((a, b) => (b[sizeBy] || b.marketCap) - (a[sizeBy] || a.marketCap));
-    this.boxes = makeSquares(items, this.canvas.width, this.canvas.height, sizeBy);
+  _groupBy0050(stocks) {
+    const in0050 = stocks.filter(s => s.isIn0050)
+    const notIn0050 = stocks.filter(s => !s.isIn0050)
+    return [
+      {
+        name: '0050成分股',
+        stocks: in0050.sort((a, b) => (b[this.sizeMetric] || 0) - (a[this.sizeMetric] || 0))
+      },
+      {
+        name: '其他',
+        stocks: notIn0050.sort((a, b) => (b[this.sizeMetric] || 0) - (a[this.sizeMetric] || 0))
+      }
+    ].filter(g => g.stocks.length > 0)
+  }
 
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  _groupByETF(stocks) {
+    const etfs = stocks.filter(s => s.sector === 'ETF')
+    return etfs.length
+      ? [
+          {
+            name: 'ETF',
+            stocks: etfs.sort((a, b) => (b[this.sizeMetric] || 0) - (a[this.sizeMetric] || 0))
+          }
+        ]
+      : []
+  }
 
-    this.boxes.forEach((b) => {
-      const cv = b[colorBy] ?? b.changePct;
-      ctx.fillStyle = colorByPct(cv);
-      ctx.fillRect(b.x, b.y, b.w, b.h);
+  render() {
+    const canvas = this.canvas
+    const dpr = window.devicePixelRatio || 1
+    
+    // Use container dimensions, not canvas offsetWidth
+    const W = this.container.offsetWidth
+    const H = this.container.offsetHeight
+    
+    // Set canvas pixel dimensions
+    canvas.width = W * dpr
+    canvas.height = H * dpr
+    
+    const ctx = canvas.getContext('2d')
+    ctx.scale(dpr, dpr)
 
-      ctx.strokeStyle = '#0a0d14';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(b.x + 0.5, b.y + 0.5, Math.max(0, b.w - 1), Math.max(0, b.h - 1));
+    ctx.clearRect(0, 0, W, H)
 
-      if (b.w > 42 && b.h > 32) {
-        const fs = Math.max(11, Math.min(20, Math.floor(b.w * 0.18)));
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${fs}px Noto Sans TC`;
-        ctx.fillText(`${b.code}`, b.x + 6, b.y + fs + 1);
+    if (!this.layout.length) return
 
-        if (b.w > 60) {
-          ctx.font = `${Math.max(10, fs - 3)}px Noto Sans TC`;
-          ctx.fillText(`${String(b.name).slice(0, 6)}`, b.x + 6, b.y + fs * 2 + 2);
-          ctx.font = `${Math.max(10, fs - 4)}px JetBrains Mono`;
-          ctx.fillText(`${b.changePct > 0 ? '+' : ''}${b.changePct}%`, b.x + 6, b.y + fs * 2 + 18);
+    // Draw each sector
+    this.layout.forEach(sector => {
+      this._drawSectorHeader(ctx, sector)
+
+      // Draw each stock tile
+      sector.stocks.forEach(stock => {
+        this._drawStockTile(ctx, stock)
+      })
+    })
+
+    // Draw hovered stock highlight on top
+    if (this.hoveredStock) {
+      this._drawHoverHighlight(ctx, this.hoveredStock)
+    }
+
+    // Draw color legend
+    this._drawColorLegend(ctx, W, H)
+  }
+
+  _drawStockTile(ctx, stock) {
+    const { x, y, w, h } = stock
+    if (w < 2 || h < 2) return  // skip invisible tiles
+
+    // Background color based on colorMetric
+    ctx.fillStyle = this._getHeatColor(stock[this.colorMetric] || 0)
+    ctx.fillRect(x, y, w, h)
+
+    // Border (1px dark separator)
+    ctx.strokeStyle = '#080a0d'
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
+
+    // Search highlight
+    if (this.searchQuery && (stock.code.includes(this.searchQuery) || stock.name.includes(this.searchQuery))) {
+      ctx.strokeStyle = '#f5c842'
+      ctx.lineWidth = 2
+      ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3)
+    }
+
+    // Labels — only draw if tile is large enough
+    if (w > 28 && h > 20) {
+      ctx.save()
+      ctx.rect(x + 1, y + 1, w - 2, h - 2)
+      ctx.clip()
+
+      // Stock code
+      const fontSize = Math.min(Math.floor(Math.min(w, h) * 0.22), 14)
+      ctx.font = `700 ${fontSize}px 'JetBrains Mono'`
+      ctx.fillStyle = 'rgba(255,255,255,0.92)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      const labelY = h > 36 ? y + h * 0.42 : y + h * 0.5
+      ctx.fillText(stock.code, x + w / 2, labelY)
+
+      // changePct (only if tile tall enough)
+      if (h > 36) {
+        const pct = stock.changePct || 0
+        const pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
+        ctx.font = `${Math.max(fontSize - 3, 8)}px 'JetBrains Mono'`
+        ctx.fillStyle = 'rgba(255,255,255,0.7)'
+        ctx.fillText(pctStr, x + w / 2, y + h * 0.65)
+      }
+
+      ctx.restore()
+    }
+  }
+
+  _drawSectorHeader(ctx, sector) {
+    const { x, y, w, h } = sector.sectorRect
+
+    // Sector background tint
+    ctx.fillStyle = SECTOR_COLORS[sector.sectorName] || '#141820'
+    ctx.fillRect(x, y, w, h)
+
+    // Sector header bar
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'
+    ctx.fillRect(x, y, w, SECTOR_HEADER_HEIGHT_CONST)
+
+    // Sector name
+    ctx.font = 'bold 10px "Noto Sans TC"'
+    ctx.fillStyle = '#f5c842'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(sector.sectorName, x + 6, y + SECTOR_HEADER_HEIGHT_CONST / 2)
+
+    // Sector total change (right side of header)
+    const sectorAvgChg = computeSectorAvg(sector.stocks)
+    const chgStr = (sectorAvgChg >= 0 ? '+' : '') + sectorAvgChg.toFixed(2) + '%'
+    ctx.font = 'bold 9px "JetBrains Mono"'
+    ctx.fillStyle = sectorAvgChg >= 0 ? '#f03a5f' : '#1fd67a'
+    ctx.textAlign = 'right'
+    ctx.fillText(chgStr, x + w - 6, y + SECTOR_HEADER_HEIGHT_CONST / 2)
+  }
+
+  _drawHoverHighlight(ctx, stock) {
+    const { x, y, w, h } = stock
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 1, y + 1, w - 2, h - 2)
+  }
+
+  _drawColorLegend(ctx, W, H) {
+    // Draw horizontal color legend at bottom-right
+    const legendW = 200
+    const legendH = 12
+    const legendX = W - legendW - 10
+    const legendY = H - legendH - 10
+
+    const bands = [
+      { color: '#00a86b', label: '-5%' },
+      { color: '#2ecc71', label: '-3%' },
+      { color: '#27ae60', label: '-1%' },
+      { color: '#1c2236', label: '0%' },
+      { color: '#922b21', label: '+1%' },
+      { color: '#e74c3c', label: '+3%' },
+      { color: '#8b0000', label: '+5%' }
+    ]
+
+    const bandW = legendW / bands.length
+
+    bands.forEach((band, i) => {
+      const bx = legendX + i * bandW
+      ctx.fillStyle = band.color
+      ctx.fillRect(bx, legendY, bandW, legendH)
+      ctx.strokeStyle = '#1c2236'
+      ctx.lineWidth = 0.5
+      ctx.strokeRect(bx, legendY, bandW, legendH)
+    })
+  }
+
+  _getHeatColor(changePct) {
+    // Taiwan convention: RED = up, GREEN = down
+    // 7-band color scale matching Finviz intensity
+    if (changePct > 5) return '#8b0000'    // extreme up (dark red)
+    if (changePct > 3) return '#c0392b'    // strong up
+    if (changePct > 1) return '#e74c3c'    // moderate up
+    if (changePct > 0) return '#922b21'    // slight up (muted)
+    if (changePct === 0) return '#1c2236'  // unchanged (neutral dark)
+    if (changePct > -1) return '#1a5c35'   // slight down
+    if (changePct > -3) return '#27ae60'   // moderate down
+    if (changePct > -5) return '#2ecc71'   // strong down
+    return '#00a86b'                        // extreme down (bright green)
+  }
+
+  _bindEvents() {
+    this.canvas.addEventListener('mousemove', e => {
+      const pos = this._getCanvasPos(e)
+      const hit = this._hitTest(pos)
+      if (hit !== this.hoveredStock) {
+        this.hoveredStock = hit
+        this.render()
+        this._onHover(hit, e)
+      }
+    })
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.hoveredStock = null
+      this.render()
+      this._onHover(null, null)
+    })
+
+    this.canvas.addEventListener('click', e => {
+      const pos = this._getCanvasPos(e)
+      const hit = this._hitTest(pos)
+      if (hit) this._onClick(hit)
+    })
+  }
+
+  _getCanvasPos(e) {
+    const rect = this.canvas.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+
+  _hitTest({ x, y }) {
+    // Check all stock rects, return first match
+    for (const sector of this.layout) {
+      for (const stock of sector.stocks) {
+        const r = stock
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+          return stock
         }
       }
-
-      if (search && (String(b.code).includes(search) || String(b.name).includes(search))) {
-        ctx.strokeStyle = '#f5c842';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(b.x + 2, b.y + 2, Math.max(0, b.w - 4), Math.max(0, b.h - 4));
-      }
-    });
+    }
+    return null
   }
 
-  handleClick(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const hit = this.boxes.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
-    if (hit) this.onClick(hit);
-  }
+  // Callbacks — override in page6.js
+  _onHover(stock, event) {}
+  _onClick(stock) {}
 
   destroy() {
-    this.resizeObserver.disconnect();
-    this.canvas.remove();
+    this._resizeObserver.disconnect()
+    this.canvas.remove()
   }
 }
