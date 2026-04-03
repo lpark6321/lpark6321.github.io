@@ -1,0 +1,3 @@
+﻿.p4-grid { display:grid; grid-template-rows: auto 1fr auto; gap:8px; }
+.p4-main { display:grid; grid-template-columns: 1fr 340px; gap:8px; min-height:420px; }
+.p4-resize { resize: both; overflow: auto; min-width: 280px; min-height: 220px; }

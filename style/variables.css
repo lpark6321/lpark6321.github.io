@@ -1,0 +1,16 @@
+﻿:root {
+  --red: #f03a5f;
+  --green: #1fd67a;
+  --gold: #f5c842;
+  --blue: #3d84ff;
+  --bg: #080a0d;
+  --panel: #0d1018;
+  --card: #111520;
+  --card2: #171c2a;
+  --border: #1c2236;
+  --border2: #263050;
+  --text: #dce4f5;
+  --text2: #6a7a99;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-ui: 'Noto Sans TC', sans-serif;
+}
