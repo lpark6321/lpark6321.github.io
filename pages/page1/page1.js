@@ -3,11 +3,12 @@ import { Panel } from '../../components/Panel.js';
 import { Sparkline } from '../../components/Sparkline.js';
 import { StockCard } from '../../components/StockCard.js';
 import { mountTradingView } from '../../services/tradingview.js';
+import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 let cleanup = () => {};
 
 const TOP10_CODES = ['2330', '2308', '2317', '2454', '3711', '2881', '2382', '2412', '2882', '2891'];
-const AMP_GRID = [["最大振幅",2668],["大大振幅",1749],["平均振幅",1282],["小小振幅",970],["最小振幅",677],["本日振幅",369]];
+const AMP_GRID = [["最大振幅",2668],["大大振幅",1749],["平均振幅",1282],["小小振幅",970],["最小振幅",677]];
 
 function c(v) { return v >= 0 ? 'metric-up' : 'metric-down'; }
 function n(v, d = 2) { return Number(v).toLocaleString('zh-TW', { minimumFractionDigits: d, maximumFractionDigits: d }); }
@@ -39,19 +40,23 @@ function buildSessionLabels(mode) {
 
 function resolveProductSnapshot(mode, taiex, futures) {
   if (mode === '台指(全)') {
+    const price = futures.price + 153;
+    const prevClose = futures.prevClose + 150;
+    const chg = price - prevClose;
     return {
       name: mode,
-      price: futures.price + 153,
+      price,
       open: futures.open + 147,
       high: futures.high + 149,
       low: futures.low + 151,
-      prevClose: futures.prevClose + 150,
-      chg: futures.change - 2,
-      chgPct: futures.changePct - 0.1,
+      prevClose,
+      chg,
+      chgPct: prevClose ? (chg / prevClose) * 100 : 0,
       volume: +(taiex.volume * 1.18).toFixed(2)
     };
   }
 
+  const chg = futures.price - futures.prevClose;
   return {
     name: mode,
     price: futures.price,
@@ -59,8 +64,8 @@ function resolveProductSnapshot(mode, taiex, futures) {
     high: futures.high,
     low: futures.low,
     prevClose: futures.prevClose,
-    chg: futures.change,
-    chgPct: futures.changePct,
+    chg,
+    chgPct: futures.prevClose ? (chg / futures.prevClose) * 100 : 0,
     volume: taiex.volume
   };
 }
@@ -246,7 +251,7 @@ function drawInfoCandle(canvas, payload) {
   ctx.stroke();
 
   const up = payload.close >= payload.open;
-  ctx.fillStyle = up ? '#2dd14f' : '#f03a5f';
+  ctx.fillStyle = up ? '#f03a5f' : '#1fd67a';
   ctx.fillRect(cx - bw / 2, Math.min(y(payload.open), y(payload.close)), bw, Math.max(3, Math.abs(y(payload.open) - y(payload.close))));
 
   const changeText = `${payload.change >= 0 ? '+' : ''}${payload.change.toFixed(0)}`;
@@ -258,10 +263,10 @@ function drawInfoCandle(canvas, payload) {
   ctx.fillText('幅度:', 8, h - 12);
 
   ctx.textAlign = 'right';
-  ctx.fillStyle = payload.change >= 0 ? '#2dd14f' : '#f03a5f';
+  ctx.fillStyle = payload.change >= 0 ? '#f03a5f' : '#1fd67a';
   ctx.font = '700 28px JetBrains Mono';
   ctx.fillText(changeText, w - 8, h - 28);
-  ctx.fillStyle = payload.ampPct >= 0 ? '#2dd14f' : '#f03a5f';
+  ctx.fillStyle = payload.ampPct >= 0 ? '#f03a5f' : '#1fd67a';
   ctx.font = '700 20px JetBrains Mono';
   ctx.fillText(ampText, w - 8, h - 8);
 }
@@ -461,13 +466,34 @@ function makeMonitorRows(mode, data) {
 export function mount(container) {
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 1｜期貨總覽</h2><span class="page-clock" id="p1-clock"></span></div>
-    <div class="p1-layout">
+    <div class="p1-layout" id="p1-layout">
       <aside class="p1-left" id="p1-left"></aside>
+      <div class="grid-splitter-v p1-splitter-left" id="p1-split-left"></div>
       <section class="panel p1-center p1-resize"><div class="panel__header"><span class="panel__badge">C</span><h3 class="panel__title">TAIEX FUTURES 主圖</h3></div><div class="panel__body p1-tv" id="p1-tv"></div></section>
+      <div class="grid-splitter-v p1-splitter-right" id="p1-split-right"></div>
       <aside class="p1-right" id="p1-right"></aside>
       <section class="panel p1-bottom p1-resize"><div class="panel__header"><span class="panel__badge">B</span><h3 class="panel__title">多功能看板</h3></div><div class="panel__body"><div class="p1-b-tabs" id="p1-b-tabs"></div><div id="p1-b-content" class="p1-b-content"></div></div></section>
     </div>
   `;
+
+  const layoutEl = container.querySelector('#p1-layout');
+  const readVar = (name, fallback) => {
+    const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const stopSplitLeft = bindHorizontalSplitter(container.querySelector('#p1-split-left'), {
+    getValue: () => readVar('--p1-left-w', 320),
+    setValue: (px) => layoutEl.style.setProperty('--p1-left-w', `${px}px`),
+    min: 240,
+    max: 560
+  });
+  const stopSplitRight = bindHorizontalSplitter(container.querySelector('#p1-split-right'), {
+    getValue: () => readVar('--p1-right-w', 420),
+    setValue: (px) => layoutEl.style.setProperty('--p1-right-w', `${px}px`),
+    min: 280,
+    max: 700,
+    deltaSign: -1
+  });
 
   const left = container.querySelector('#p1-left');
   const right = container.querySelector('#p1-right');
@@ -601,11 +627,15 @@ export function mount(container) {
     const f = store.get('futures');
     const isFull = productMode === '台指(全)';
     const m = resolveProductSnapshot(productMode, d, f);
+    const liveChange = m.price - m.prevClose;
+    const liveChangePct = m.prevClose ? (liveChange / m.prevClose) * 100 : 0;
+    const liveAmplitude = Math.abs(m.high - m.low);
 
     container.querySelector('#p1-main').innerHTML = `
       <div class="p1-kv"><span>商品</span><strong><label class="p1-radio"><input type="radio" name="p1-product" value="台指(全)" ${isFull ? 'checked' : ''}>台指(全)</label><label class="p1-radio"><input type="radio" name="p1-product" value="台指" ${!isFull ? 'checked' : ''}>台指</label></strong></div>
       <div class="p1-main-top">
         <div class="p1-main-table">
+          <div class="p1-kv p1-kv-current"><span>現價</span><strong class="${c(m.price - m.prevClose)}">${m.price}</strong></div>
           <div class="p1-kv"><span>台約開</span><strong>${m.open}</strong></div>
           <div class="p1-kv"><span>台約高</span><strong>${m.high}</strong></div>
           <div class="p1-kv"><span>台約低</span><strong>${m.low}</strong></div>
@@ -616,7 +646,7 @@ export function mount(container) {
         </div>
       </div>
       <div class="p1-kv"><span>台指加權價差</span><strong class="${c(m.price - d.price)}">${(m.price - d.price).toFixed(2)}</strong></div>
-      <div class="p1-kv"><span>台指近月漲跌</span><strong class="${c(m.chg)}">${m.chg.toFixed(2)}</strong></div>
+      <div class="p1-kv"><span>台指近月漲跌</span><strong class="${c(liveChange)}">${liveChange.toFixed(2)}</strong></div>
     `;
 
     drawInfoCandle(container.querySelector('#p1-main-mini-canvas'), {
@@ -624,8 +654,8 @@ export function mount(container) {
       close: m.price,
       high: m.high,
       low: m.low,
-      change: m.chg,
-      ampPct: m.chgPct
+      change: liveChange,
+      ampPct: liveChangePct
     });
 
     const upper = [d.price + 280, d.price + 180, d.price + 100, d.price + 40, d.price + 10].map((x) => x.toFixed(0));
@@ -637,7 +667,7 @@ export function mount(container) {
 
     container.querySelector('#p1-hist').innerHTML = `
       <div class="p1-block-title">日振幅統計(近20日)</div>
-      <div class="p1-amp-list">${AMP_GRID.map((r) => `<div class="p1-kv"><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join('')}</div>
+      <div class="p1-amp-list">${[...AMP_GRID, ['本日振幅', liveAmplitude.toFixed(0)]].map((r) => `<div class="p1-kv"><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join('')}</div>
     `;
 
     container.querySelectorAll('input[name="p1-product"]').forEach((el) => el.addEventListener('change', (e) => {
@@ -748,6 +778,8 @@ export function mount(container) {
     monitorResize.disconnect();
     trendResize.disconnect();
     if (ampResizeObserver) ampResizeObserver.disconnect();
+    stopSplitLeft();
+    stopSplitRight();
     cards.forEach((x) => x.destroy()); miniSparks.forEach((x) => x.destroy());
     pLeft.destroy(); p6.destroy(); p5.destroy();
   };

@@ -12,7 +12,7 @@
   }
 
   ensureCanvasSize() {
-    const width = Math.max(320, Math.floor(this.canvas.clientWidth || 460));
+    const width = Math.max(220, Math.floor(this.canvas.clientWidth || 460));
     const height = 220;
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;

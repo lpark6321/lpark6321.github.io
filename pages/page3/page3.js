@@ -3,6 +3,7 @@ import { WatchlistSidebar } from '../../components/WatchlistSidebar.js';
 import { AlertTable } from '../../components/AlertTable.js';
 import { PatternTogglePanel } from '../../components/PatternTogglePanel.js';
 import { MiniDetailChart } from '../../components/MiniDetailChart.js';
+import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 let cleanup = () => {};
 
@@ -18,18 +19,37 @@ export function mount(container) {
         <div class="p3-cell p3-w" id="p3-left"></div>
         <div class="p3-cell p3-a" id="p3-alert"></div>
       </section>
+      <div class="grid-splitter-v p3-main-splitter" id="p3-main-split"></div>
       <section class="p3-cell p3-p" id="p3-toggle"></section>
       <section class="p3-cell p3-m" id="p3-detail"></section>
     </div>
   `;
 
+  const gridEl = container.querySelector('.p3-grid9');
+  const readVar = (name, fallback) => {
+    const value = parseFloat(getComputedStyle(gridEl).getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p3-main-split'), {
+    getValue: () => readVar('--p3-left-w', 420),
+    setValue: (px) => gridEl.style.setProperty('--p3-left-w', `${px}px`),
+    min: 280,
+    max: 700
+  });
+
   const side = new WatchlistSidebar(container.querySelector('#p3-left'));
   const table = new AlertTable(container.querySelector('#p3-alert'), { onSelect: (code) => store.set('selectedStock', code) });
-  const toggles = new PatternTogglePanel(container.querySelector('#p3-toggle'), { onChange: (enabled) => store.set('enabledPatterns', enabled) });
+  const toggles = new PatternTogglePanel(container.querySelector('#p3-toggle'), {
+    onChange: (enabled) => store.set('enabledPatterns', enabled),
+    defaultCollapsed: true
+  });
   const detail = new MiniDetailChart(container.querySelector('#p3-detail'));
 
   side.root.classList.add('p3-resize-panel');
+  side.root.classList.add('p3-panel-w');
   table.root.classList.add('p3-resize-panel');
+  table.root.classList.add('p3-panel-a');
+  toggles.root.classList.add('p3-resize-panel');
   detail.root.classList.add('p3-resize-panel');
 
   if (!store.get('enabledPatterns').length) store.set('enabledPatterns', toggles.getEnabled());
@@ -57,6 +77,7 @@ export function mount(container) {
 
   cleanup = () => {
     unsub1(); unsub2(); unsub3();
+    stopMainSplit();
     side.destroy(); table.destroy(); toggles.destroy(); detail.destroy();
   };
 

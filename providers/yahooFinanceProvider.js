@@ -23,8 +23,12 @@ export class YahooFinanceProvider extends BaseMarketDataProvider {
   }
 
   async requestRemoteData() {
-    const response = await fetch(this.apiUrl, {
+    const url = new URL(this.apiUrl);
+    url.searchParams.set('_ts', String(Date.now()));
+
+    const response = await fetch(url.toString(), {
       method: 'GET',
+      cache: 'no-store',
       headers: {
         Accept: 'application/json'
       }

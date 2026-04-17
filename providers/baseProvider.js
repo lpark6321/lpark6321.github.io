@@ -60,7 +60,8 @@ export class BaseMarketDataProvider {
     }
 
     if (this.inFlight) {
-      return this.inFlight;
+      if (!force) return this.inFlight;
+      return this.inFlight.then(() => this.withCache({ force: true }, requestFn));
     }
 
     if (!force && this.shouldThrottle(now) && this.cache.data) {

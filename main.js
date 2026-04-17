@@ -134,6 +134,12 @@ function renderProviderFields() {
   elements.taifexUrlField?.classList.toggle('is-hidden', state.providerType !== 'taifex');
 }
 
+function setRefreshing(isRefreshing) {
+  if (!elements.refreshButton) return;
+  elements.refreshButton.disabled = isRefreshing;
+  elements.refreshButton.textContent = isRefreshing ? 'Refreshing...' : 'Refresh now';
+}
+
 function scheduleRetry() {
   clearInterval(state.intervalId);
   state.intervalId = null;
@@ -149,6 +155,11 @@ async function fetchData(options = {}) {
 }
 
 async function updateDashboard(options = {}) {
+  const isManualRefresh = options.force === true;
+  if (isManualRefresh) {
+    setRefreshing(true);
+  }
+
   try {
     clearTimeout(state.retryTimeoutId);
     state.retryTimeoutId = null;
@@ -162,6 +173,10 @@ async function updateDashboard(options = {}) {
       elements.providerNote.textContent = `${state.provider.description} Error: ${error.message}`;
     }
     scheduleRetry();
+  } finally {
+    if (isManualRefresh) {
+      setRefreshing(false);
+    }
   }
 }
 

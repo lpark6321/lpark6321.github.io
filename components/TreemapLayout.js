@@ -1,228 +1,182 @@
-// Pure Squarified Treemap Layout Algorithm
-// No DOM, no Canvas, no side effects
-// Reference: Bruls, Huizing, van Wijk (2000)
+export const SECTOR_HEADER_HEIGHT = 22;
 
-const SECTOR_HEADER_HEIGHT = 22
-const GAP_BETWEEN_SECTORS = 3
-const GAP_BETWEEN_TILES = 1
+function rowSum(row) {
+  return row.reduce((sum, value) => sum + value, 0);
+}
 
-/**
- * Compute worst aspect ratio in a row
- * row: array of normalized areas
- * rowLength: the shorter dimension of the row's bounding box
- */
 function worstRatio(row, rowLength) {
-  if (row.length === 0) return Infinity
-  const sum = row.reduce((a, b) => a + b, 0)
-  const maxArea = Math.max(...row)
-  const minArea = Math.min(...row)
-
+  if (!row.length || rowLength <= 0) return Number.POSITIVE_INFINITY;
+  const sum = rowSum(row);
+  if (sum <= 0) return Number.POSITIVE_INFINITY;
+  const maxArea = Math.max(...row);
+  const minArea = Math.min(...row);
   return Math.max(
     (rowLength * rowLength * maxArea) / (sum * sum),
-    (sum * sum) / (rowLength * rowLength * minArea)
-  )
+    (sum * sum) / (rowLength * rowLength * Math.max(minArea, 1e-9))
+  );
 }
 
-/**
- * Core Squarified Treemap Layout
- * items: [{ id, value, ...rest }] sorted descending by value
- * container: { x, y, w, h }
- * returns: [{ id, x, y, w, h, value, ...rest }]
- */
-export function squarify(items, container) {
-  if (!items.length) return []
-  if (container.w <= 0 || container.h <= 0) return []
+function normalizeAreas(items, container) {
+  const positive = items
+    .map((item) => ({ ...item, value: Number(item.value) || 0 }))
+    .filter((item) => item.value > 0);
+  if (!positive.length) return [];
 
-  // Normalize values so sum = container area
-  const total = items.reduce((s, i) => s + Math.max(0, i.value || 0), 0)
-  if (total === 0) return []
-
-  const area = container.w * container.h
-  const normalized = items.map(i => ({
-    ...i,
-    normalizedValue: Math.max(0, (i.value || 0) / total) * area
-  }))
-
-  const result = []
-  const layoutRows = squarifyRows(normalized, container, 0)
-  result.push(...layoutRows)
-
-  return result
+  const totalValue = positive.reduce((sum, item) => sum + item.value, 0);
+  const totalArea = Math.max(container.w, 0) * Math.max(container.h, 0);
+  return positive.map((item) => ({
+    ...item,
+    area: (item.value / totalValue) * totalArea
+  }));
 }
 
-function squarifyRows(items, container, depth = 0) {
-  if (!items.length) return []
+function layoutRow(rowItems, rowAreas, rect, horizontal) {
+  const result = [];
+  const totalArea = rowSum(rowAreas);
+  if (totalArea <= 0) return { result, rect };
 
-  let minX = container.x
-  let minY = container.y
-  let width = container.w
-  let height = container.h
-
-  const result = []
-  let currentIndex = 0
-
-  while (currentIndex < items.length && width > 1 && height > 1) {
-    const isHorizontal = width >= height
-
-    // Determine row length (shorter dimension)
-    const rowLength = isHorizontal ? height : width
-
-    // Greedily grow row while aspect ratio improves
-    let row = []
-    let rowSum = 0
-    let candidate = currentIndex
-
-    while (candidate < items.length) {
-      const currentWorst = worstRatio(
-        [...row, items[candidate].normalizedValue],
-        rowLength
-      )
-      const nextWorst =
-        candidate + 1 < items.length
-          ? worstRatio(
-              [...row, items[candidate].normalizedValue, items[candidate + 1].normalizedValue],
-              rowLength
-            )
-          : Infinity
-
-      if (currentWorst <= nextWorst) {
-        row.push(items[candidate].normalizedValue)
-        rowSum += items[candidate].normalizedValue
-        candidate++
-      } else {
-        break
-      }
-    }
-
-    // Layout this row
-    const rowItems = items.slice(currentIndex, currentIndex + row.length)
-    const rowRects = layoutRow(
-      rowItems,
-      row,
-      { x: minX, y: minY, w: width, h: height },
-      isHorizontal,
-      rowLength
-    )
-
-    result.push(...rowRects)
-
-    // Update container for next row
-    if (isHorizontal) {
-      const rowHeightUsed = rowLength > 0 ? rowSum / rowLength : 0
-      minY += rowHeightUsed
-      height -= rowHeightUsed
-    } else {
-      const rowWidthUsed = rowLength > 0 ? rowSum / rowLength : 0
-      minX += rowWidthUsed
-      width -= rowWidthUsed
-    }
-
-    currentIndex += row.length
+  if (horizontal) {
+    const rowWidth = totalArea / rect.h;
+    let y = rect.y;
+    rowItems.forEach((item, index) => {
+      const h = rowAreas[index] / rowWidth;
+      result.push({
+        ...item,
+        x: rect.x,
+        y,
+        w: rowWidth,
+        h
+      });
+      y += h;
+    });
+    return {
+      result,
+      rect: { x: rect.x + rowWidth, y: rect.y, w: rect.w - rowWidth, h: rect.h }
+    };
   }
 
-  return result
-}
-
-function layoutRow(items, normalizedValues, container, isHorizontal, rowLength) {
-  const result = []
-  const sum = normalizedValues.reduce((a, b) => a + b, 0)
-
-  let pos = 0
-
-  items.forEach((item, i) => {
-    const normVal = normalizedValues[i]
-    let x, y, w, h
-
-    if (isHorizontal) {
-      w = rowLength > 0 ? sum / rowLength : 0
-      h = sum > 0 ? normVal / w : 0
-      x = container.x
-      y = container.y + pos
-      pos += h
-    } else {
-      h = rowLength > 0 ? sum / rowLength : 0
-      w = sum > 0 ? normVal / h : 0
-      x = container.x + pos
-      y = container.y
-      pos += w
-    }
-
+  const rowHeight = totalArea / rect.w;
+  let x = rect.x;
+  rowItems.forEach((item, index) => {
+    const w = rowAreas[index] / rowHeight;
     result.push({
       ...item,
-      x: Math.round(x),
-      y: Math.round(y),
-      w: Math.round(w),
-      h: Math.round(h)
-    })
-  })
-
-  return result
+      x,
+      y: rect.y,
+      w,
+      h: rowHeight
+    });
+    x += w;
+  });
+  return {
+    result,
+    rect: { x: rect.x, y: rect.y + rowHeight, w: rect.w, h: rect.h - rowHeight }
+  };
 }
 
-/**
- * Layout with Sector Grouping
- * sectors: [{ name, stocks: [{code, name, value, ...}] }]
- * Returns: [{ sectorName, sectorRect, stocks: [{...stockData, rect}] }]
- */
-export function layoutWithGroups(sectors, containerW, containerH) {
-  // Step 1: compute total marketCap per sector
-  const sectorItems = sectors.map(s => ({
-    id: s.name,
-    value: s.stocks.reduce((sum, st) => sum + (st.marketCap || 0), 0),
-    name: s.name,
-    stocks: s.stocks
-  }))
+export function squarify(items, container) {
+  if (!Array.isArray(items) || !items.length) return [];
+  if (container.w <= 0 || container.h <= 0) return [];
 
-  // Step 2: squarify sectors into full container
-  const sectorRects = squarify(sectorItems, {
-    x: 0,
-    y: 0,
-    w: containerW,
-    h: containerH
-  })
+  const sorted = normalizeAreas(items, container).sort((a, b) => b.area - a.area);
+  if (!sorted.length) return [];
 
-  // Step 3: for each sector, squarify stocks within that sector's rect
-  return sectorRects.map(sr => {
-    const innerRect = {
-      x: sr.x + GAP_BETWEEN_SECTORS,
-      y: sr.y + SECTOR_HEADER_HEIGHT + GAP_BETWEEN_SECTORS,
-      w: Math.max(0, sr.w - GAP_BETWEEN_SECTORS * 2),
-      h: Math.max(0, sr.h - SECTOR_HEADER_HEIGHT - GAP_BETWEEN_SECTORS * 2)
+  const output = [];
+  let remaining = { ...container };
+  let rowItems = [];
+  let rowAreas = [];
+  let index = 0;
+
+  while (index < sorted.length) {
+    const next = sorted[index];
+    const nextAreas = [...rowAreas, next.area];
+    const shortSide = Math.min(remaining.w, remaining.h);
+    if (!rowAreas.length || worstRatio(nextAreas, shortSide) <= worstRatio(rowAreas, shortSide)) {
+      rowItems.push(next);
+      rowAreas = nextAreas;
+      index += 1;
+    } else {
+      const horizontal = remaining.w >= remaining.h;
+      const laidOut = layoutRow(rowItems, rowAreas, remaining, horizontal);
+      output.push(...laidOut.result);
+      remaining = laidOut.rect;
+      rowItems = [];
+      rowAreas = [];
     }
+  }
 
-    const stockItems = sr.stocks.map(s => ({
-      id: s.code,
-      code: s.code,
-      name: s.name,
-      value: s.marketCap || 0,
-      sector: s.sector,
-      subSector: s.subSector,
-      marketCap: s.marketCap,
-      price: s.price,
-      changePct: s.changePct,
-      volume: s.volume,
-      isIn0050: s.isIn0050
-    }))
+  if (rowItems.length) {
+    const horizontal = remaining.w >= remaining.h;
+    const laidOut = layoutRow(rowItems, rowAreas, remaining, horizontal);
+    output.push(...laidOut.result);
+  }
 
-    const stockRects = squarify(stockItems, innerRect)
+  return output.map((item) => {
+    const { area, ...rest } = item;
+    return rest;
+  });
+}
+
+function shrinkRect(rect, inset) {
+  const x = rect.x + inset;
+  const y = rect.y + inset;
+  const w = rect.w - inset * 2;
+  const h = rect.h - inset * 2;
+  return {
+    x,
+    y,
+    w: Math.max(0, w),
+    h: Math.max(0, h)
+  };
+}
+
+export function computeSectorAvg(stocks) {
+  if (!stocks.length) return 0;
+  const total = stocks.reduce((sum, stock) => sum + (Number(stock.changePct) || 0), 0);
+  return total / stocks.length;
+}
+
+export function layoutWithGroups(sectors, containerW, containerH, gapBetweenSectors = 2, gapBetweenTiles = 1) {
+  if (!Array.isArray(sectors) || !sectors.length) return [];
+
+  const sectorItems = sectors
+    .map((sector) => {
+      const value = sector.stocks.reduce((sum, stock) => {
+        return sum + (Number(stock.value) || Number(stock.marketCap) || 0);
+      }, 0);
+      return { id: sector.name, value, stocks: sector.stocks };
+    })
+    .filter((sector) => sector.value > 0);
+
+  const sectorRects = squarify(sectorItems, { x: 0, y: 0, w: containerW, h: containerH });
+
+  return sectorRects.map((sectorRect) => {
+    const paddedSectorRect = shrinkRect(sectorRect, gapBetweenSectors / 2);
+    const stockContainer = {
+      x: paddedSectorRect.x + gapBetweenTiles / 2,
+      y: paddedSectorRect.y + SECTOR_HEADER_HEIGHT + gapBetweenTiles / 2,
+      w: paddedSectorRect.w - gapBetweenTiles,
+      h: paddedSectorRect.h - SECTOR_HEADER_HEIGHT - gapBetweenTiles
+    };
+
+    const stockItems = (sectorRect.stocks || [])
+      .map((stock) => ({
+        ...stock,
+        id: stock.code,
+        value: Number(stock.value) || Number(stock.marketCap) || 0
+      }))
+      .filter((stock) => stock.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const stockRects = squarify(stockItems, stockContainer).map((stockRect) => ({
+      ...stockRect,
+      rect: shrinkRect(stockRect, gapBetweenTiles / 2)
+    }));
 
     return {
-      sectorName: sr.id,
-      sectorRect: { x: sr.x, y: sr.y, w: sr.w, h: sr.h },
+      sectorName: sectorRect.id,
+      sectorRect: paddedSectorRect,
       stocks: stockRects
-    }
-  })
+    };
+  });
 }
-
-/**
- * Compute sector average change percentage
- */
-export function computeSectorAvg(stocks) {
-  if (!stocks.length) return 0
-  const sum = stocks.reduce((s, st) => s + (st.changePct || 0), 0)
-  return sum / stocks.length
-}
-
-export const SECTOR_HEADER_HEIGHT_CONST = SECTOR_HEADER_HEIGHT
-export const GAP_BETWEEN_SECTORS_CONST = GAP_BETWEEN_SECTORS
-export const GAP_BETWEEN_TILES_CONST = GAP_BETWEEN_TILES

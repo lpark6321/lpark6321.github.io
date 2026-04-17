@@ -29,6 +29,9 @@ export class PatternTogglePanel {
     this.render('all');
     this.root.querySelector('.cat-filter').addEventListener('change', (e) => this.render(e.target.value));
     this.root.querySelector('.toggle').addEventListener('click', () => this.toggle());
+    if (options.defaultCollapsed) {
+      this.toggle();
+    }
   }
 
   toggle() {

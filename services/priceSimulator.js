@@ -1,9 +1,11 @@
-﻿import { store } from '../data/store.js';
+import { store } from '../data/store.js';
+import { TW_STOCK_UNIVERSE } from '../data/twStocks.js';
 import { getMarketStatus } from './marketCalendar.js';
 
 let tickTimer = null;
 let globalTimer = null;
 let marketMapTimer = null;
+let marketMapState = null;
 
 function rand(min, max) {
   return Math.random() * (max - min) + min;
@@ -18,6 +20,41 @@ function pushSpark(arr, value, maxLen = 60) {
   const next = [...arr, value];
   if (next.length > maxLen) next.shift();
   return next;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function hashCode(code) {
+  return String(code)
+    .split('')
+    .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+}
+
+function intradayBias() {
+  const now = new Date();
+  const minute = now.getHours() * 60 + now.getMinutes();
+  const sessionStart = 9 * 60;
+  const sessionEnd = 13 * 60 + 30;
+  const progress = clamp((minute - sessionStart) / (sessionEnd - sessionStart), 0, 1);
+  return Math.sin((progress - 0.25) * Math.PI) * 0.5;
+}
+
+function buildInitialMarketMap() {
+  return TW_STOCK_UNIVERSE.map((stock) => {
+    const seed = hashCode(stock.code);
+    const basePrice = +(30 + (seed % 900) * 1.3).toFixed(2);
+    const changePct = +((Math.random() - 0.5) * 1.2).toFixed(2);
+    return {
+      ...stock,
+      price: basePrice,
+      changePct,
+      change5d: +(changePct * 1.8).toFixed(2),
+      volume: Math.round(300000 + (seed % 700) * 8000),
+      volRatio: +(0.75 + ((seed % 100) / 100) * 0.8).toFixed(2)
+    };
+  });
 }
 
 function updateTopStocks() {
@@ -122,70 +159,63 @@ export function stopGlobalSimulator() {
   globalTimer = null;
 }
 
-// Simulate Taiwan stock market prices for treemap (page6)
 export function simulateMarketMap() {
   if (marketMapTimer) return;
 
-  // Import here to avoid blocking initial page load
-  import('../data/twStocks.js').then(mod => {
-    const { TW_STOCK_UNIVERSE, SECTOR_ORDER } = mod;
+  const sectorTrends = {};
+  const sectors = ['半導體', '電子零組件', '金融', '傳產', '光電', '航運', 'ETF'];
+  sectors.forEach((sector) => {
+    sectorTrends[sector] = (Math.random() - 0.5) * 2;
+  });
 
-    // Initialize sector trends (sector-wide drift)
-    const sectorTrends = {};
-    SECTOR_ORDER.forEach(sector => {
-      sectorTrends[sector] = (Math.random() - 0.5) * 4; // -2% to +2% sector trend
+  marketMapState = buildInitialMarketMap();
+  store.set('marketMap', marketMapState);
+
+  marketMapTimer = setInterval(() => {
+    if (!marketMapState || !marketMapState.length) {
+      marketMapState = buildInitialMarketMap();
+    }
+
+    const marketBias = intradayBias();
+    marketMapState = marketMapState.map((stock) => {
+      const sectorTrend = sectorTrends[stock.sector] || 0;
+      const individualNoise = (Math.random() - 0.5) * 1.6;
+      const target = sectorTrend + marketBias + individualNoise;
+      const nextChangePct = clamp((stock.changePct || 0) * 0.55 + target * 0.45, -5, 5);
+      const nextChange5d = clamp(
+        (stock.change5d || 0) * 0.72 + nextChangePct * 0.28 + (Math.random() - 0.5) * 0.6,
+        -12,
+        12
+      );
+
+      const basePrice = Math.max((stock.price || 50) / (1 + (stock.changePct || 0) / 100), 10);
+      const nextPrice = +(basePrice * (1 + nextChangePct / 100)).toFixed(2);
+      const nextVolRatio = clamp((stock.volRatio || 1) * (0.88 + Math.random() * 0.24), 0.35, 3.8);
+      const nextVolume = Math.max(50000, Math.round((stock.volume || 300000) * (0.76 + Math.random() * 0.48)));
+
+      return {
+        ...stock,
+        price: nextPrice,
+        changePct: +nextChangePct.toFixed(2),
+        change5d: +nextChange5d.toFixed(2),
+        volume: nextVolume,
+        volRatio: +nextVolRatio.toFixed(2)
+      };
     });
 
-    marketMapTimer = setInterval(() => {
-      const marketMap = TW_STOCK_UNIVERSE.map(stock => {
-        // Get current price from store or initialize
-        const current = store.get('marketMap')?.find(m => m.code === stock.code) || {
-          price: Math.random() * 200 + 50,
-          changePct: 0,
-          change5d: 0,
-          volume: Math.random() * 1e7,
-          volRatio: Math.random() * 3
-        };
+    store.set('marketMap', marketMapState);
 
-        // Apply sector trend + random walk
-        const sectorDrift = sectorTrends[stock.sector] || 0;
-        const individualDrift = (Math.random() - 0.5) * 3;
-        const priceDrift = (sectorDrift + individualDrift) * 0.1;
-
-        const newPrice = Math.max(10, current.price * (1 + priceDrift / 100));
-        const newChangePct = +(priceDrift * (Math.random() + 0.5)).toFixed(2);
-        const newChange5d = +((newChangePct + (Math.random() - 0.5) * 4).toFixed(2));
-
-        return {
-          code: stock.code,
-          name: stock.name,
-          sector: stock.sector,
-          subSector: stock.subSector,
-          marketCap: stock.marketCap,
-          isIn0050: stock.isIn0050,
-          price: +newPrice.toFixed(2),
-          changePct: +newChangePct.toFixed(2),
-          change5d: +newChange5d.toFixed(2),
-          volume: Math.round(current.volume * (0.8 + Math.random() * 0.4)),
-          volRatio: +(current.volRatio * (0.7 + Math.random() * 0.6)).toFixed(2)
-        };
+    if (Math.random() < 0.1) {
+      sectors.forEach((sector) => {
+        sectorTrends[sector] = clamp(sectorTrends[sector] + (Math.random() - 0.5) * 0.4, -2.8, 2.8);
       });
-
-      store.set('marketMap', marketMap);
-
-      // Update sector trends periodically (every 30 seconds)
-      if (Math.random() < 0.1) {
-        SECTOR_ORDER.forEach(sector => {
-          sectorTrends[sector] += (Math.random() - 0.5) * 0.5;
-          sectorTrends[sector] = Math.max(-5, Math.min(5, sectorTrends[sector]));
-        });
-      }
-    }, 5000); // Update every 5 seconds
-  });
+    }
+  }, 5000);
 }
 
 export function stopMarketMapSimulator() {
   if (!marketMapTimer) return;
   clearInterval(marketMapTimer);
   marketMapTimer = null;
+  marketMapState = null;
 }

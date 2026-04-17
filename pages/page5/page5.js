@@ -3,20 +3,34 @@ import { applyFilters } from '../../services/filterEngine.js';
 import { FilterPanel } from '../../components/FilterPanel.js';
 import { ResultTable } from '../../components/ResultTable.js';
 import { WatchlistAddBar } from '../../components/WatchlistAddBar.js';
+import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 let cleanup = () => {};
 
 export function mount(container) {
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 5｜策略選股</h2></div>
-    <div class="p5-grid">
+    <div class="p5-grid" id="p5-grid">
       <aside id="p5-filters"></aside>
+      <div class="grid-splitter-v p5-main-splitter" id="p5-main-split"></div>
       <section class="p5-right">
         <div id="p5-results"></div>
         <div id="p5-addbar"></div>
       </section>
     </div>
   `;
+
+  const gridEl = container.querySelector('#p5-grid');
+  const readVar = (name, fallback) => {
+    const value = parseFloat(getComputedStyle(gridEl).getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p5-main-split'), {
+    getValue: () => readVar('--p5-left-w', 320),
+    setValue: (px) => gridEl.style.setProperty('--p5-left-w', `${px}px`),
+    min: 260,
+    max: 620
+  });
 
   let filtered = store.get('screenResults');
 
@@ -53,6 +67,7 @@ export function mount(container) {
 
   cleanup = () => {
     unsub();
+    stopMainSplit();
     filter.destroy();
     results.destroy();
     addBar.destroy();

@@ -18,7 +18,7 @@ function nearestStrike(strikes, target) {
 }
 
 export class StrategyBuilder {
-  constructor(container) {
+  constructor(container, options = {}) {
     this.collapsed = false;
     this.root = document.createElement('section');
     this.root.className = 'panel';
@@ -35,11 +35,15 @@ export class StrategyBuilder {
     this.renderInputs();
     this.renderPresets();
     this.updateSummary();
+    if (options.defaultCollapsed) {
+      this.toggle();
+    }
   }
 
   toggle() {
     this.collapsed = !this.collapsed;
     this.root.querySelector('.sb-body').style.display = this.collapsed ? 'none' : '';
+    this.root.classList.toggle('is-collapsed', this.collapsed);
     this.root.querySelector('.sb-toggle').textContent = this.collapsed ? '展開' : '收合';
   }
 
