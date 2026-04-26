@@ -11,10 +11,11 @@ export class TreemapControls {
     this.el.innerHTML = `
       <div class="tm-ctrl-group">
         <span class="tm-ctrl-label">分組</span>
+        <button class="tm-btn active" data-group="sector">類股</button>
         <button class="tm-btn" data-group="weighted">加權</button>
+        <button class="tm-btn" data-group="weighted2">加權2</button>
         <button class="tm-btn" data-group="tw50">台灣50</button>
         <button class="tm-btn" data-group="mid100">中型100</button>
-        <button class="tm-btn active" data-group="sector">類股</button>
       </div>
       <div class="tm-ctrl-group">
         <span class="tm-ctrl-label">顏色</span>

@@ -1,5 +1,8 @@
 import { store } from '../data/store.js';
 import { TW_STOCK_UNIVERSE } from '../data/twStocks.js';
+import { TW50_BY_CODE } from '../data/tw50Constituents.js';
+import { MID100_BY_CODE } from '../data/twMid100Constituents.js';
+import { TAIEX_BY_CODE } from '../data/taiexWeightedConstituents.js';
 import { getMarketStatus } from './marketCalendar.js';
 
 let tickTimer = null;
@@ -41,8 +44,95 @@ function intradayBias() {
   return Math.sin((progress - 0.25) * Math.PI) * 0.5;
 }
 
+function buildMarketMapUniverse() {
+  const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
+
+  Object.values(TW50_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isIn0050: true,
+        tw50WeightPct: item.weightPct,
+        tw50Major: item.majorGroup,
+        syntheticConstituentOnly: false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.majorGroup,
+      subSector: '台灣50',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isIn0050: true,
+      tw50WeightPct: item.weightPct,
+      tw50Major: item.majorGroup,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  Object.values(MID100_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isInMid100: true,
+        mid100WeightPct: item.weightPct,
+        mid100Major: item.majorGroup,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: '中型100',
+      subSector: '中型100',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isInMid100: true,
+      mid100WeightPct: item.weightPct,
+      mid100Major: item.majorGroup,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  Object.values(TAIEX_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        yahooSector: item.yahooSector || existing.yahooSector,
+        taiexWeightPct: item.weightPct,
+        taiexSector: item.sector,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.sector,
+      yahooSector: item.yahooSector || null,
+      subSector: '加權',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      taiexWeightPct: item.weightPct,
+      taiexSector: item.sector,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  return [...map.values()];
+}
+
 function buildInitialMarketMap() {
-  return TW_STOCK_UNIVERSE.map((stock) => {
+  return buildMarketMapUniverse().map((stock) => {
     const seed = hashCode(stock.code);
     const basePrice = +(30 + (seed % 900) * 1.3).toFixed(2);
     const changePct = +((Math.random() - 0.5) * 1.2).toFixed(2);
@@ -163,7 +253,7 @@ export function simulateMarketMap() {
   if (marketMapTimer) return;
 
   const sectorTrends = {};
-  const sectors = ['半導體', '電子零組件', '金融', '傳產', '光電', '航運', 'ETF'];
+  const sectors = [...new Set(buildMarketMapUniverse().map((stock) => stock.taiexSector || stock.sector).filter(Boolean))];
   sectors.forEach((sector) => {
     sectorTrends[sector] = (Math.random() - 0.5) * 2;
   });
@@ -178,7 +268,8 @@ export function simulateMarketMap() {
 
     const marketBias = intradayBias();
     marketMapState = marketMapState.map((stock) => {
-      const sectorTrend = sectorTrends[stock.sector] || 0;
+      const sectorKey = stock.taiexSector || stock.sector;
+      const sectorTrend = sectorTrends[sectorKey] || 0;
       const individualNoise = (Math.random() - 0.5) * 1.6;
       const target = sectorTrend + marketBias + individualNoise;
       const nextChangePct = clamp((stock.changePct || 0) * 0.55 + target * 0.45, -5, 5);

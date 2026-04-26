@@ -26,8 +26,8 @@ export async function mountTradingView(container, options = {}) {
   container.appendChild(node);
   new window.TradingView.widget({
     autosize: true,
-    symbol: options.symbol || 'TWSE:TAIEX',
-    interval: options.interval || 'D',
+    symbol: options.symbol || 'INDEX:TWII',
+    interval: options.interval || 'M',
     timezone: 'Asia/Taipei',
     theme: 'dark',
     style: '1',

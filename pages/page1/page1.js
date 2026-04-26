@@ -768,7 +768,7 @@ export function mount(container) {
   }, 1000);
 
   let stopTv = () => {};
-  mountTradingView(container.querySelector('#p1-tv'), { symbol: 'TWSE:TAIEX', interval: 'D' })
+  mountTradingView(container.querySelector('#p1-tv'), { symbol: 'INDEX:TWII', interval: 'D' })//TWSE:TAIEX或TAIEX FUTURES
     .then((fn) => { stopTv = fn; })
     .catch(() => { container.querySelector('#p1-tv').innerHTML = '<div style="color:var(--text2)">TradingView 載入失敗</div>'; });
 

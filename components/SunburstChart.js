@@ -1,3 +1,60 @@
+import { TW50_MAJOR_GROUP_ORDER } from '../data/tw50Constituents.js';
+import { MID100_MAJOR_GROUP_ORDER } from '../data/twMid100Constituents.js';
+import {
+  TAIEX_PRIMARY_SECTORS,
+  TAIEX2_PRIMARY_SECTORS,
+  TAIEX_OTHER_SECTOR_WEIGHT,
+  TAIEX2_OTHER_SECTOR_WEIGHT,
+  TAIEX_STOCK_THRESHOLD,
+  TAIEX2_STOCK_THRESHOLD,
+  TAIEX_WEIGHTED_SECTOR_ORDER,
+  TAIEX2_WEIGHTED_SECTOR_ORDER,
+  TAIEX_SECTOR_WEIGHTS
+} from '../data/taiexWeightedConstituents.js';
+
+const GROUP_LABELS = { other: '其他' };
+
+const YAHOO_SECTOR_ORDER = [
+  '半導體',
+  '電子零組件',
+  '電腦及週邊設備',
+  '通信網路',
+  '光電',
+  '其他電子',
+  '金融保險',
+  '航運',
+  '電機機械',
+  '塑膠',
+  '水泥',
+  '食品',
+  '鋼鐵',
+  '生技醫療',
+  '紡織纖維',
+  '建材營造',
+  '玻璃陶瓷',
+  '橡膠',
+  '汽車',
+  '居家生活',
+  '綠能環保',
+  '其他'
+];
+
+const ELECTRONIC_SECTOR_SET = new Set([
+  '電子',
+  '半導體',
+  '半導體業',
+  '電子零組件',
+  '電子零組件業',
+  '電腦及週邊設備',
+  '電腦及週邊設備業',
+  '通信網路',
+  '通信網路業',
+  '光電',
+  '光電業',
+  '其他電子',
+  '其他電子業'
+]);
+
 export class SunburstChart {
   constructor(container) {
     this.container = container;
@@ -44,6 +101,18 @@ export class SunburstChart {
   }
 
   _resolveSizeValue(stock) {
+    if (this.groupMode === 'sector' || this.groupMode === 'weighted' || this.groupMode === 'weighted2') {
+      const weight = Number(stock.taiexWeightPct);
+      return weight > 0 ? weight : 0;
+    }
+    if (this.groupMode === 'tw50') {
+      const weight = Number(stock.tw50WeightPct);
+      return weight > 0 ? weight : 0;
+    }
+    if (this.groupMode === 'mid100') {
+      const weight = Number(stock.mid100WeightPct);
+      return weight > 0 ? weight : 0;
+    }
     const volume = Number(stock.volume) || 0;
     const marketCap = Number(stock.marketCap) || 0;
     return this.sizeMetric === 'volume' ? Math.max(volume, 0) : Math.max(marketCap, 0);
@@ -57,46 +126,230 @@ export class SunburstChart {
     return Number(stock[this.colorMetric]) || 0;
   }
 
+  _resolveYahooSector(stock) {
+    const yahoo = String(stock.yahooSector || '').trim();
+    if (yahoo) return yahoo;
+    const taiexSector = String(stock.taiexSector || '');
+    if (taiexSector.includes('半導體')) return '半導體';
+    if (taiexSector.includes('電子零組件')) return '電子零組件';
+    if (taiexSector.includes('電腦及週邊設備')) return '電腦及週邊設備';
+    if (taiexSector.includes('通信網路')) return '通信網路';
+    if (taiexSector.includes('光電')) return '光電';
+    if (taiexSector.includes('其他電子')) return '其他電子';
+    if (taiexSector.includes('金融')) return '金融保險';
+    if (taiexSector.includes('航運')) return '航運';
+    if (taiexSector.includes('電機機械')) return '電機機械';
+    if (taiexSector.includes('塑膠')) return '塑膠';
+    if (taiexSector.includes('水泥')) return '水泥';
+    if (taiexSector.includes('食品')) return '食品';
+    if (taiexSector.includes('鋼鐵')) return '鋼鐵';
+    if (taiexSector.includes('生技')) return '生技醫療';
+    if (taiexSector.includes('紡織')) return '紡織纖維';
+    if (taiexSector.includes('建材')) return '建材營造';
+    if (taiexSector.includes('玻璃')) return '玻璃陶瓷';
+    if (taiexSector.includes('橡膠')) return '橡膠';
+    if (taiexSector.includes('汽車')) return '汽車';
+    if (taiexSector.includes('居家')) return '居家生活';
+    if (taiexSector.includes('綠能')) return '綠能環保';
+    return '其他';
+  }
+
+  _classifyMajorBySector(stock) {
+    const sector = String(stock.sector || stock.taiexSector || '');
+    if (sector.includes('金融')) return '金融';
+    if (sector.includes('航運') || sector.includes('航空')) return '航運';
+    if (ELECTRONIC_SECTOR_SET.has(sector) || sector.includes('電子') || sector.includes('半導體')) return '電子';
+    if (sector && sector !== GROUP_LABELS.other) return '傳產';
+    return '其他';
+  }
+
+  _resolveTw50Major(stock) {
+    const explicit = stock.tw50Major;
+    if (explicit && TW50_MAJOR_GROUP_ORDER.includes(explicit)) return explicit;
+    const major = this._classifyMajorBySector(stock);
+    return major === '電子' || major === '金融' ? major : '傳產';
+  }
+
+  _resolveMid100Major(stock) {
+    const explicit = stock.mid100Major;
+    if (explicit && MID100_MAJOR_GROUP_ORDER.includes(explicit)) return explicit;
+    return this._classifyMajorBySector(stock);
+  }
+
   _getScopedStocks() {
-    if (this.groupMode === 'weighted') {
-      return this.stocks.filter((stock) => stock.sector !== 'ETF');
-    }
+    const allowSynthetic =
+      this.groupMode === 'sector' ||
+      this.groupMode === 'weighted' ||
+      this.groupMode === 'weighted2' ||
+      this.groupMode === 'tw50' ||
+      this.groupMode === 'mid100';
+    const base = this.stocks.filter((stock) => allowSynthetic || !stock.syntheticConstituentOnly);
 
-    if (this.groupMode === 'tw50') {
-      return this.stocks.filter((stock) => stock.isIn0050);
+    if (this.groupMode === 'sector' || this.groupMode === 'weighted' || this.groupMode === 'weighted2') {
+      return base
+        .filter((stock) => Number(stock.taiexWeightPct) > 0)
+        .sort((a, b) => (Number(b.taiexWeightPct) || 0) - (Number(a.taiexWeightPct) || 0));
     }
-
+    if (this.groupMode === 'tw50') return base.filter((stock) => Number(stock.tw50WeightPct) > 0);
     if (this.groupMode === 'mid100') {
-      const explicit = this.stocks.filter((stock) => stock.isInMid100 === true);
+      const explicit = base
+        .filter((stock) => Number(stock.mid100WeightPct) > 0 || stock.isInMid100 === true)
+        .sort((a, b) => (Number(b.mid100WeightPct) || 0) - (Number(a.mid100WeightPct) || 0));
       if (explicit.length) return explicit;
-      return this.stocks
+      return base
         .filter((stock) => !stock.isIn0050 && stock.sector !== 'ETF')
         .sort((a, b) => (Number(b.marketCap) || 0) - (Number(a.marketCap) || 0))
         .slice(0, 100);
     }
+    return base;
+  }
 
-    return this.stocks;
+  _computeSectorMetrics(stocks) {
+    if (!stocks.length) return { changePct: 0 };
+    const totalWeight = stocks.reduce((sum, s) => sum + (Number(s.taiexWeightPct) || 0), 0);
+    if (totalWeight <= 0) return { changePct: 0 };
+    const changePct = stocks.reduce(
+      (sum, s) => sum + (Number(s.changePct) || 0) * (Number(s.taiexWeightPct) || 0),
+      0
+    ) / totalWeight;
+    return { changePct };
+  }
+
+  _buildSectorOnlySectors(scoped) {
+    const sectorOrder = TAIEX_SECTOR_WEIGHTS.map((row) => row.name);
+    const sectorWeightMap = new Map(TAIEX_SECTOR_WEIGHTS.map((row) => [row.name, Number(row.weightPct) || 0]));
+    const grouped = new Map(sectorOrder.map((name) => [name, []]));
+
+    scoped.forEach((stock) => {
+      const raw = String(stock.taiexSector || '');
+      const sectorName = grouped.has(raw) ? raw : GROUP_LABELS.other;
+      grouped.get(sectorName).push(stock);
+    });
+
+    return sectorOrder
+      .map((name) => {
+        const value = Number(sectorWeightMap.get(name) || 0);
+        if (value <= 0) return null;
+        const metrics = this._computeSectorMetrics(grouped.get(name) || []);
+        return {
+          name,
+          value,
+          changePct: metrics.changePct,
+          stocks: []
+        };
+      })
+      .filter(Boolean);
+  }
+
+  _weightedGroups(scoped, options = {}) {
+    const {
+      primarySectors = TAIEX_PRIMARY_SECTORS,
+      sectorOrder = TAIEX_WEIGHTED_SECTOR_ORDER,
+      otherSectorWeight = TAIEX_OTHER_SECTOR_WEIGHT,
+      stockThreshold = TAIEX_STOCK_THRESHOLD
+    } = options;
+
+    const sectorWeightMap = new Map(TAIEX_SECTOR_WEIGHTS.map((row) => [row.name, Number(row.weightPct) || 0]));
+    sectorWeightMap.set(GROUP_LABELS.other, Number(otherSectorWeight) || 0);
+
+    const grouped = new Map(sectorOrder.map((name) => [name, []]));
+    scoped.forEach((stock) => {
+      const raw = String(stock.taiexSector || '');
+      const sectorName = primarySectors.includes(raw) ? raw : GROUP_LABELS.other;
+      if (!grouped.has(sectorName)) grouped.set(sectorName, []);
+      grouped.get(sectorName).push(stock);
+    });
+
+    return sectorOrder
+      .map((sectorName) => {
+        const allStocks = (grouped.get(sectorName) || []).sort(
+          (a, b) => (Number(b.taiexWeightPct) || 0) - (Number(a.taiexWeightPct) || 0)
+        );
+        const majorStocks = allStocks.filter((stock) => Number(stock.taiexWeightPct) >= Number(stockThreshold || 0));
+        const majorSum = majorStocks.reduce((sum, stock) => sum + (Number(stock.taiexWeightPct) || 0), 0);
+        const configuredWeight = Number(sectorWeightMap.get(sectorName) || 0);
+        const sectorWeight = Math.max(configuredWeight, majorSum);
+        const remainder = +(sectorWeight - majorSum).toFixed(4);
+        const stocks = [...majorStocks];
+
+        if (remainder > 0.0001) {
+          stocks.push({
+            code: `REST-${sectorName}`,
+            name: '其他(<0.1%)',
+            taiexWeightPct: remainder,
+            value: remainder,
+            marketCap: remainder,
+            taiexSector: sectorName,
+            syntheticConstituentOnly: true,
+            isWeightedRemainder: true
+          });
+        }
+
+        return {
+          name: sectorName,
+          value: stocks.reduce((sum, stock) => sum + this._resolveSizeValue(stock), 0),
+          stocks
+        };
+      })
+      .filter((sector) => sector.value > 0);
+  }
+
+  _sectorGroupsByYahoo(scoped) {
+    const grouped = new Map();
+    scoped.forEach((stock) => {
+      const sectorName = this._resolveYahooSector(stock);
+      if (!grouped.has(sectorName)) grouped.set(sectorName, []);
+      grouped.get(sectorName).push(stock);
+    });
+
+    return YAHOO_SECTOR_ORDER
+      .filter((name) => grouped.has(name))
+      .map((name) => {
+        const stocks = grouped.get(name).sort((a, b) => (Number(b.taiexWeightPct) || 0) - (Number(a.taiexWeightPct) || 0));
+        return {
+          name,
+          value: stocks.reduce((sum, stock) => sum + this._resolveSizeValue(stock), 0),
+          stocks
+        };
+      })
+      .filter((sector) => sector.value > 0);
   }
 
   _buildSectors() {
     const scoped = this._getScopedStocks();
-    const sectorMap = new Map();
+    if (this.groupMode === 'sector') return this._buildSectorOnlySectors(scoped);
+    if (this.groupMode === 'weighted') return this._weightedGroups(scoped);
+    if (this.groupMode === 'weighted2') {
+      return this._weightedGroups(scoped, {
+        primarySectors: TAIEX2_PRIMARY_SECTORS,
+        sectorOrder: TAIEX2_WEIGHTED_SECTOR_ORDER,
+        otherSectorWeight: TAIEX2_OTHER_SECTOR_WEIGHT,
+        stockThreshold: TAIEX2_STOCK_THRESHOLD
+      });
+    }
 
+    const sectorMap = new Map();
     scoped.forEach((stock) => {
-      const sectorName = stock.sector || '其他';
+      let sectorName = stock.sector || GROUP_LABELS.other;
+      if (this.groupMode === 'tw50') sectorName = this._resolveTw50Major(stock);
+      if (this.groupMode === 'mid100') sectorName = this._resolveMid100Major(stock);
+
       const size = this._resolveSizeValue(stock);
       if (size <= 0) return;
-      if (!sectorMap.has(sectorName)) {
-        sectorMap.set(sectorName, { name: sectorName, value: 0, stocks: [] });
-      }
+      if (!sectorMap.has(sectorName)) sectorMap.set(sectorName, { name: sectorName, value: 0, stocks: [] });
       const sector = sectorMap.get(sectorName);
       sector.value += size;
       sector.stocks.push(stock);
     });
 
-    return [...sectorMap.values()]
-      .filter((sector) => sector.value > 0)
-      .sort((a, b) => b.value - a.value);
+    const sectors = [...sectorMap.values()].filter((sector) => sector.value > 0);
+    if (this.groupMode === 'tw50') {
+      return TW50_MAJOR_GROUP_ORDER.map((name) => sectors.find((sector) => sector.name === name)).filter(Boolean);
+    }
+    if (this.groupMode === 'mid100') {
+      return MID100_MAJOR_GROUP_ORDER.map((name) => sectors.find((sector) => sector.name === name)).filter(Boolean);
+    }
+    return sectors.sort((a, b) => b.value - a.value);
   }
 
   render() {
@@ -131,7 +384,9 @@ export class SunburstChart {
       const sweep = (sector.value / total) * Math.PI * 2;
       const end = start + sweep;
 
-      const sectorColor = this._sectorPalette(index);
+      const sectorColor = this.groupMode === 'sector'
+        ? this._getHeatColor(Number(sector.changePct) || 0)
+        : this._sectorPalette(index);
       const sectorHovered = this.hoveredSegment === `sector:${sector.name}`;
       const sectorFill = this._toRgba(sectorColor, sectorHovered ? 0.95 : 0.78);
       this._drawRingArc(ctx, cx, cy, sectorInnerR, sectorOuterR, start, end, sectorFill);
@@ -148,11 +403,7 @@ export class SunburstChart {
       const sectorTotal = sector.value;
       let stockStart = start;
       sector.stocks
-        .map((stock) => ({
-          stock,
-          size: this._resolveSizeValue(stock),
-          colorValue: this._resolveColorValue(stock)
-        }))
+        .map((stock) => ({ stock, size: this._resolveSizeValue(stock), colorValue: this._resolveColorValue(stock) }))
         .filter((item) => item.size > 0)
         .sort((a, b) => b.size - a.size)
         .forEach((item) => {
@@ -174,12 +425,14 @@ export class SunburstChart {
 
           const pct = Number(item.stock.changePct) || 0;
           const pctText = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
-          this._drawArcTextBlock(
-            ctx,
-            { cx, cy, start: stockStart, end: stockEnd, r0: stockInnerR, r1: outerR },
-            [item.stock.code, this._shortName(item.stock.name), pctText],
-            { fontFamily: '"Noto Sans TC", sans-serif', color: 'rgba(255,255,255,0.92)', weight: 700 }
-          );
+          if (this._shouldDrawStockLabel(item.stock)) {
+            this._drawArcTextBlock(
+              ctx,
+              { cx, cy, start: stockStart, end: stockEnd, r0: stockInnerR, r1: outerR },
+              [this._stockNameForLabel(item.stock.name), item.stock.code, pctText],
+              { fontFamily: '"Noto Sans TC", sans-serif', color: 'rgba(255,255,255,0.92)', weight: 700 }
+            );
+          }
 
           this.stockArcs.push({
             id: stockId,
@@ -205,10 +458,33 @@ export class SunburstChart {
     ctx.stroke();
   }
 
-  _shortName(name) {
+  _stockNameForLabel(name) {
     const text = String(name || '');
     if (text.length <= 8) return text;
-    return `${text.slice(0, 8)}…`;
+    return `${text.slice(0, 8)}...`;
+  }
+
+  _resolveGroupWeightPct(stock) {
+    if (this.groupMode === 'sector' || this.groupMode === 'weighted' || this.groupMode === 'weighted2') {
+      return Number(stock.taiexWeightPct) || 0;
+    }
+    if (this.groupMode === 'tw50') return Number(stock.tw50WeightPct) || 0;
+    if (this.groupMode === 'mid100') return Number(stock.mid100WeightPct) || 0;
+    return 0;
+  }
+
+  _shouldDrawStockLabel(stock) {
+    if (!stock || stock.isWeightedRemainder) return false;
+    if (
+      this.groupMode === 'sector' ||
+      this.groupMode === 'weighted' ||
+      this.groupMode === 'weighted2' ||
+      this.groupMode === 'tw50' ||
+      this.groupMode === 'mid100'
+    ) {
+      return this._resolveGroupWeightPct(stock) >= 0.2;
+    }
+    return true;
   }
 
   _drawArcTextBlock(ctx, arc, lines, style = {}) {
@@ -239,7 +515,6 @@ export class SunburstChart {
       if (widest <= usableW && textH <= usableH) break;
       fontSize -= 0.5;
     }
-
     if (fontSize < 6) return false;
 
     const mid = (arc.start + arc.end) / 2;
@@ -326,11 +601,8 @@ export class SunburstChart {
       return;
     }
 
-    if (hitStock?.stock) {
-      this._onHover(hitStock.stock, e);
-    } else {
-      this._onHover(null, null);
-    }
+    if (hitStock?.stock) this._onHover(hitStock.stock, e);
+    else this._onHover(null, null);
   }
 
   _isHitArc(angle, dist, arc) {
