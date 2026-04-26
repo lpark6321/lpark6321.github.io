@@ -1,0 +1,27 @@
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Sans';
+}
+
+\\ <h1 > ~ <h6 > �����ҳ��H�o���ݩʭ׹�
+
+p.lead {
+    font-weight: 600;
+    color: black;
+}
+
+\\ <p > ���Ҧp�Gclass�ݩʬO��lead�����H�o���ݩʭ׹�
+
+#intro .jumbotron {
+    height: 70vh;
+}
+
+\\ �bid�ݩʬ���intro�������Ҥ��A�p�Gclass�ݩʬO�� jumbotron�����H�o���ݩʭ׹�
+\\ id�ݩʳq�`�N�O�ΨӯS�O���w�Y�Ӫ���Ϊ����O�A<div class=��row�� id=��intro�� >
+
+header nav a img {
+    width: 38px;
+}
+
+\\ �b<header > ���Ҥ���<nav > ���Ҥ���<a > ���Ҥ���<img > ���ҳ��H�o���ݩʭ׹�
+\\ �D�n�O�Q�i�ܦp����w�]�b��L���Ҥ�������
+

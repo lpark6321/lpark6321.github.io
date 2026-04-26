@@ -1,5 +1,8 @@
 import { store } from '../../data/store.js';
 import { TW_STOCK_UNIVERSE } from '../../data/twStocks.js';
+import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
+import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
+import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
 import { TreemapCanvas } from '../../components/TreemapCanvas.js';
 import { TreemapControls } from '../../components/TreemapControls.js';
 import { TreemapTooltip } from '../../components/TreemapTooltip.js';
@@ -10,11 +13,106 @@ import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 let cleanup = () => {};
 
+function buildPage6Universe() {
+  const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
+
+  Object.values(TW50_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isIn0050: true,
+        tw50WeightPct: item.weightPct,
+        tw50Major: item.majorGroup,
+        tw50Rank: item.rank,
+        syntheticConstituentOnly: false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.majorGroup,
+      subSector: '台灣50',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isIn0050: true,
+      tw50WeightPct: item.weightPct,
+      tw50Major: item.majorGroup,
+      tw50Rank: item.rank,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  Object.values(MID100_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isInMid100: true,
+        mid100WeightPct: item.weightPct,
+        mid100Major: item.majorGroup,
+        mid100Rank: item.rank,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: '中型100',
+      subSector: '中型100',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isInMid100: true,
+      mid100WeightPct: item.weightPct,
+      mid100Major: item.majorGroup,
+      mid100Rank: item.rank,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  Object.values(TAIEX_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        yahooSector: item.yahooSector || existing.yahooSector,
+        taiexWeightPct: item.weightPct,
+        taiexSector: item.sector,
+        taiexRank: item.rank,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.sector,
+      yahooSector: item.yahooSector || null,
+      subSector: '加權',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      taiexWeightPct: item.weightPct,
+      taiexSector: item.sector,
+      taiexRank: item.rank,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  return [...map.values()];
+}
+
+const PAGE6_UNIVERSE = buildPage6Universe();
+
 function mergeData() {
   const marketRows = store.get('marketMap') || [];
   const map = new Map(marketRows.map((row) => [String(row.code), row]));
 
-  return TW_STOCK_UNIVERSE.map((stock) => {
+  return PAGE6_UNIVERSE.map((stock) => {
     const live = map.get(stock.code) || {};
     const price = Number(live.price);
     const changePct = Number(live.changePct);
@@ -51,6 +149,7 @@ export function mount(container) {
     const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
   };
+
   const stopDetailSplit = bindHorizontalSplitter(container.querySelector('#p6-split'), {
     getValue: () => readVar('--p6-detail-w', 280),
     setValue: (px) => layoutEl.style.setProperty('--p6-detail-w', `${px}px`),
@@ -63,6 +162,7 @@ export function mount(container) {
   const detail = new TreemapDetail(detailEl, {
     onClose: () => layoutEl.classList.remove('detail-open')
   });
+
   let currentChart = null;
   const chartState = {
     groupMode: 'sector',
@@ -95,15 +195,18 @@ export function mount(container) {
     if (currentChart && typeof currentChart.destroy === 'function') {
       currentChart.destroy();
     }
+
     mapEl.innerHTML = '';
     detail.hide();
     tooltip.hide();
     layoutEl.classList.remove('detail-open');
+
     if (type === 'sunburst') {
       currentChart = new SunburstChart(mapEl);
       bindHoverCallbacks(currentChart);
       return;
     }
+
     currentChart = new TreemapCanvas(mapEl);
     bindTreemapCallbacks(currentChart);
   };

@@ -1,0 +1,995 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>PAGE 2 繚 ?啗皞怠漲閮?/title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+:root {
+  --bg: #080a0d;
+  --panel: #0d1018;
+  --card: #111520;
+  --card2: #171c2a;
+  --border: #1c2236;
+  --border2: #263050;
+  --gold: #f5c842;
+  --red: #f03a5f;
+  --green: #1fd67a;
+  --gray: #5a6888;
+  --blue: #3d84ff;
+  --cyan: #00c8d4;
+  --orange: #ff8c42;
+  --text: #dce4f5;
+  --text2: #6a7a99;
+  --text3: #333d55;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Noto Sans TC', monospace;
+  font-size: 11px;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ?? NAV ?? */
+#nav {
+  height: 34px;
+  background: #06080b;
+  border-bottom: 1px solid var(--border2);
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.tabs { display:flex; gap:2px; padding:4px 8px; }
+
+.tab {
+  padding: 0 16px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  clip-path: polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%);
+  transition: all .15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { background:var(--gold); color:#000; border-color:var(--gold); font-weight:700; }
+
+.nav-r {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 14px;
+}
+
+.dot { width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:.3} }
+
+.clk { font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.1em; }
+
+/* ?? GRID LAYOUT ?? */
+/* 
+  Left column: ????+ ?⊿???+ ?Ｚ?????  Center-top: ???蝛箸??+ ?日??∪撥撘?  Bottom row: ?交??潸 | ?阡??⊥K | ?批撌?*/
+#grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 1fr 180px;
+  gap: 3px;
+  padding: 3px;
+  overflow: hidden;
+}
+
+/* Left column spans all rows */
+#left-col {
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+/* Center top */
+#center-top {
+  display: flex;
+  gap: 3px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Bottom row */
+#bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 3px;
+  overflow: hidden;
+}
+
+/* ?? PANEL BASE ?? */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ph {
+  padding: 5px 9px;
+  background: var(--card2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ph-num {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #000;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ph-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: .1em;
+}
+
+.ph-sub { font-size: 8px; color: var(--text2); margin-left: auto; }
+
+/* ?? SECTION 1: ?鞈? ?? */
+#s1 { flex-shrink: 0; }
+
+.idx-table { width: 100%; padding: 6px 8px; }
+
+.idx-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 1fr;
+  align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  gap: 4px;
+}
+
+.idx-label { font-size: 9px; color: var(--text2); }
+.idx-chg { font-size: 11px; font-weight: 700; font-family:'JetBrains Mono'; text-align:right; }
+.idx-val  { font-size: 12px; font-weight: 700; font-family:'JetBrains Mono'; text-align:right; }
+
+.big-time {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: .08em;
+  text-align: center;
+  padding: 6px 0 4px;
+  font-family: 'JetBrains Mono';
+}
+
+.vol-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+
+.vol-box {
+  flex: 1;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  text-align: center;
+}
+
+.vol-label { font-size: 8px; color: var(--text2); margin-bottom: 2px; }
+.vol-val   { font-size: 13px; font-weight: 700; font-family:'JetBrains Mono'; color: var(--text); }
+.vol-val.est { color: var(--orange); }
+
+/* ?? SECTION 2: ???? ?? */
+#s2 { flex-shrink: 0; }
+
+.s2-grid { padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+
+.s2-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 4px;
+}
+
+.s2-label { font-size: 9px; color: var(--text2); }
+
+.s2-val {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono';
+  text-align: right;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  color: var(--red);
+}
+
+/* ?? SECTION 3: 鞈?瘚? ?? */
+#s3 { flex: 1; min-height: 0; }
+
+.flow-table { width:100%; padding: 4px 8px; }
+
+.flow-head {
+  display: grid;
+  grid-template-columns: 50px 1fr 1fr;
+  padding: 2px 0;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.flow-head span { font-size: 8px; color: var(--text2); text-align: right; }
+.flow-head span:first-child { text-align: left; }
+
+.flow-row {
+  display: grid;
+  grid-template-columns: 50px 1fr 1fr;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+
+.flow-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  text-align: center;
+  border-radius: 2px;
+  width: 42px;
+}
+
+.tag-big  { background: #3a0014; color: var(--red);   border: 1px solid var(--red); }
+.tag-mid  { background: #001f20; color: #2addd4;      border: 1px solid #2addd4; }
+.tag-other{ background: #0a1030; color: var(--blue);  border: 1px solid var(--blue); }
+
+.flow-num { font-size: 11px; font-weight: 700; font-family:'JetBrains Mono'; text-align:right; }
+
+/* ?? SECTION 4: 憭征?餅? ?? */
+#s4 {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.gauge-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-around;
+  padding: 8px;
+  gap: 0;
+}
+
+.gauge-container { position:relative; width:200px; height:110px; }
+
+/* SVG gauge drawn with canvas-like approach */
+.gauge-title {
+  font-size: 9px;
+  color: var(--text2);
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.gauge-score {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* ?? SECTION 5: 憿撘瑕摹 ?? */
+#s5 { flex: 1; min-height: 0; }
+
+.sector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sector-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.sector-name {
+  font-size: 9px;
+  color: var(--text2);
+  letter-spacing: .05em;
+}
+
+.pie-wrap { position: relative; width: 80px; height: 80px; }
+
+/* ?? SECTION 6/7/8: Bottom charts ?? */
+.bottom-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chart-area {
+  flex: 1;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.bar-chart-wrap {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.bar-label {
+  font-size: 7px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.bar-col-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+}
+
+/* Scrollable bar chart */
+.bar-scroll {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding-bottom: 2px;
+}
+
+.bar-scroll::-webkit-scrollbar { height: 2px; }
+.bar-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.zero-line {
+  height: 1px;
+  background: var(--border2);
+  width: 100%;
+  margin: 2px 0;
+}
+
+/* Candlestick mini */
+canvas { display: block; }
+
+/* Percent axis labels */
+.axis-labels {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.axis-l {
+  font-size: 7px;
+  color: var(--text3);
+  line-height: 1;
+}
+
+/* codex overrides */
+body, body * { font-size: 18px !important; }
+.tabs { display: none !important; }
+#nav { justify-content: flex-end; }
+.panel, .bottom-panel, #s1, #s2, #s3, #s4, #s5 {
+  resize: both;
+  overflow: auto;
+  min-width: 260px;
+  min-height: 160px;
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<div id="nav">
+  <div class="tabs">
+    <div class="tab">PAGE 1 繚 ?疏蝮質汗</div>
+    <div class="tab active">PAGE 2 繚 ?啗皞怠漲閮?/div>
+    <div class="tab">PAGE 3 繚 ???</div>
+    <div class="tab">PAGE 4 繚 蝐Ⅳ??</div>
+  </div>
+  <div class="nav-r">
+    <div style="display:flex;align-items:center;gap:5px;font-size:9px;color:var(--text2)">
+      <div class="dot"></div>?文?蝯梯?
+    </div>
+    <div class="clk" id="clk">16:22:57</div>
+  </div>
+</div>
+
+<!-- GRID -->
+<div id="grid">
+
+  <!-- LEFT COLUMN -->
+  <div id="left-col">
+
+    <!-- ???鞈? -->
+    <div class="panel" id="s1">
+      <div class="ph">
+        <div class="ph-num">1</div>
+        <span class="ph-title">?鞈?</span>
+        <span class="ph-sub" id="live-time">16:22:57</span>
+      </div>
+      <div class="big-time" id="big-time">16:22:57</div>
+      <div class="vol-row">
+        <div class="vol-box">
+          <div class="vol-label">???冽??/div>
+          <div class="vol-val" id="vol-y">1684.57</div>
+        </div>
+        <div class="vol-box">
+          <div class="vol-label">???摯??/div>
+          <div class="vol-val est" id="vol-e">1730.34</div>
+        </div>
+      </div>
+      <div class="idx-table">
+        <div class="idx-row">
+          <span class="idx-label">???</span>
+          <span class="idx-chg" style="color:var(--red)" id="w-chg">??33.79</span>
+          <span class="idx-val" style="color:var(--red)" id="w-val">10879.47</span>
+        </div>
+        <div class="idx-row">
+          <span class="idx-label">?唳???/span>
+          <span class="idx-chg" style="color:var(--red)">??17</span>
+          <span class="idx-val" style="color:var(--red)">10865</span>
+        </div>
+        <div class="idx-row">
+          <span class="idx-label">?孵榆</span>
+          <span class="idx-chg"></span>
+          <span class="idx-val" style="color:var(--red)">??4</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ?????? -->
+    <div class="panel" id="s2">
+      <div class="ph">
+        <div class="ph-num">2</div>
+        <span class="ph-title">????</span>
+      </div>
+      <div class="s2-grid">
+        <div class="s2-row">
+          <span class="s2-label">閰行??葫??/span>
+          <span class="s2-val">10879.48</span>
+        </div>
+        <div class="s2-row">
+          <span class="s2-label">閰行?瞍脰?</span>
+          <span class="s2-val">??33.78</span>
+        </div>
+        <div class="s2-row">
+          <span class="s2-label">??隡圈?</span>
+          <span class="s2-val" style="color:var(--cyan)">119.33</span>
+        </div>
+        <div class="s2-row">
+          <span class="s2-label">?批??文榆</span>
+          <span class="s2-val">??0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ???日鞈?瘚? -->
+    <div class="panel" id="s3">
+      <div class="ph">
+        <div class="ph-num">3</div>
+        <span class="ph-title">?日鞈?瘚?</span>
+      </div>
+      <div class="flow-table">
+        <div class="flow-head">
+          <span></span><span>?摯</span><span>撖阡?</span>
+        </div>
+        <div class="flow-row">
+          <div class="flow-tag tag-big">憭扳</div>
+          <span class="flow-num" style="color:var(--red)">??2.1</span>
+          <span class="flow-num" style="color:var(--red)">??14.6</span>
+        </div>
+        <div class="flow-row">
+          <div class="flow-tag tag-mid">銝剖祕??/div>
+          <span class="flow-num" style="color:var(--red)">??0.7</span>
+          <span class="flow-num" style="color:var(--red)">??0.4</span>
+        </div>
+        <div class="flow-row">
+          <div class="flow-tag tag-other">?嗡?</div>
+          <span class="flow-num" style="color:var(--red)">??1.0</span>
+          <span class="flow-num" style="color:var(--red)">??.8</span>
+        </div>
+      </div>
+      <!-- Mini flow bar -->
+      <div style="padding:6px 8px;flex:1;display:flex;flex-direction:column;justify-content:flex-end">
+        <div style="font-size:8px;color:var(--text2);margin-bottom:4px">鞈?瘚?頞典</div>
+        <canvas id="flow-canvas" style="width:100%;height:50px"></canvas>
+      </div>
+    </div>
+
+  </div><!-- /left-col -->
+
+  <!-- CENTER-TOP -->
+  <div id="center-top">
+
+    <!-- ??憭征?餅??? -->
+    <div class="panel" id="s4">
+      <div class="ph">
+        <div class="ph-num">4</div>
+        <span class="ph-title">憭征?餅???</span>
+      </div>
+      <div class="gauge-wrap">
+        <!-- Bull gauge -->
+        <div>
+          <div class="gauge-title">憭?餅???</div>
+          <div style="position:relative;width:200px;height:100px">
+            <canvas id="gauge-bull" width="200" height="100"></canvas>
+          </div>
+          <div class="gauge-score" style="color:var(--red)">5 / 28 &nbsp;繚&nbsp; 撘勗</div>
+        </div>
+        <!-- Bear gauge -->
+        <div>
+          <div class="gauge-title">蝛箸?餅???</div>
+          <div style="position:relative;width:200px;height:100px">
+            <canvas id="gauge-bear" width="200" height="100"></canvas>
+          </div>
+          <div class="gauge-score" style="color:var(--green)">18 / 48 &nbsp;繚&nbsp; 銝剖撥</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ??憿撘瑕摹 -->
+    <div class="panel" id="s5">
+      <div class="ph">
+        <div class="ph-num">5</div>
+        <span class="ph-title">憿撘瑕摹??/span>
+        <span class="ph-sub">瞍?頝?撟?雿?</span>
+      </div>
+      <div class="sector-grid" id="sector-grid">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+  </div><!-- /center-top -->
+
+  <!-- BOTTOM ROW -->
+  <div id="bottom-row">
+
+    <!-- ??甈潸??? -->
+    <div class="bottom-panel">
+      <div class="ph">
+        <div class="ph-num">6</div>
+        <span class="ph-title">甈潸瞍脰?撟?/span>
+      </div>
+      <div class="chart-area">
+        <canvas id="bar-weight" style="width:100%;flex:1"></canvas>
+      </div>
+    </div>
+
+    <!-- ??憿?疏?仕 -->
+    <div class="bottom-panel">
+      <div class="ph">
+        <div class="ph-num">7</div>
+        <span class="ph-title">憿?疏?仕</span>
+      </div>
+      <div class="chart-area">
+        <canvas id="bar-sector" style="width:100%;flex:1"></canvas>
+      </div>
+    </div>
+
+    <!-- ??憿?疏?孵榆 -->
+    <div class="bottom-panel">
+      <div class="ph">
+        <div class="ph-num">8</div>
+        <span class="ph-title">憿?疏?孵榆</span>
+      </div>
+      <div class="chart-area">
+        <canvas id="bar-spread" style="width:100%;flex:1"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+// ?? Clock ??
+function tick() {
+  const d = new Date();
+  const t = [d.getHours(),d.getMinutes(),d.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':');
+  document.getElementById('clk').textContent = t;
+  document.getElementById('big-time').textContent = t;
+  document.getElementById('live-time').textContent = t;
+}
+setInterval(tick, 1000); tick();
+
+// ?? Tab switch ??
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+  });
+});
+
+// ?? Helper: draw half-circle gauge ??
+function drawGauge(canvasId, value, max, label, bullMode) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 200, H = 100;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0,0,W,H);
+
+  const cx = W/2, cy = H - 8, r = H - 16;
+  const startA = Math.PI, endA = 0;
+
+  // Background arc
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI, 0, false);
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = '#1a2035';
+  ctx.stroke();
+
+  // Color zones
+  const zones = bullMode
+    ? [ [Math.PI, Math.PI*1.33, '#1a3020'], [Math.PI*1.33, Math.PI*1.66, '#3a4010'], [Math.PI*1.66, Math.PI*2, '#3a1020'] ]
+    : [ [Math.PI, Math.PI*1.33, '#1a3020'], [Math.PI*1.33, Math.PI*1.66, '#3a4010'], [Math.PI*1.66, Math.PI*2, '#3a1020'] ];
+
+  zones.forEach(([sa, ea, col]) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, sa, ea, false);
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = col;
+    ctx.stroke();
+  });
+
+  // Value arc
+  const ratio = Math.min(value/max, 1);
+  const valueA = Math.PI + ratio * Math.PI;
+  const arcColor = bullMode
+    ? (ratio < 0.35 ? '#1fd67a' : ratio < 0.65 ? '#f5c842' : '#f03a5f')
+    : (ratio < 0.35 ? '#1fd67a' : ratio < 0.65 ? '#f5c842' : '#f03a5f');
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI, valueA, false);
+  ctx.lineWidth = 14;
+  ctx.strokeStyle = arcColor;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Needle
+  const needleA = Math.PI + ratio * Math.PI;
+  const nx = cx + (r+2) * Math.cos(needleA);
+  const ny = cy + (r+2) * Math.sin(needleA);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(nx, ny);
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = bullMode ? '#f03a5f' : '#1fd67a';
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI*2);
+  ctx.fillStyle = bullMode ? '#f03a5f' : '#1fd67a';
+  ctx.fill();
+
+  // Scale ticks
+  for (let i = 0; i <= 6; i++) {
+    const a = Math.PI + (i/6)*Math.PI;
+    const x1 = cx + (r-10) * Math.cos(a);
+    const y1 = cy + (r-10) * Math.sin(a);
+    const x2 = cx + (r-18) * Math.cos(a);
+    const y2 = cy + (r-18) * Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x2,y2);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#2a3550';
+    ctx.stroke();
+  }
+
+  // Tick labels
+  ctx.font = '8px JetBrains Mono';
+  ctx.fillStyle = '#4a5a7a';
+  ctx.textAlign = 'center';
+  const lbls = [0, 25, 50, 75, 100, 125, 150];
+  lbls.forEach((lbl, i) => {
+    const a = Math.PI + (i/6)*Math.PI;
+    const tx = cx + (r-26) * Math.cos(a);
+    const ty = cy + (r-26) * Math.sin(a);
+    ctx.fillText(lbl, tx, ty+3);
+  });
+
+  // Label in arc
+  ctx.font = 'bold 10px Noto Sans TC';
+  ctx.fillStyle = bullMode ? '#f03a5f' : '#1fd67a';
+  ctx.textAlign = 'center';
+  ctx.fillText(bullMode ? '憭?餅?' : '蝛箸?餅?', cx, cy - r/2);
+}
+
+drawGauge('gauge-bull', 5, 28, '憭?餅?', true);
+drawGauge('gauge-bear', 18, 48, '蝛箸?餅?', false);
+
+// ?? Pie charts: 憿撘瑕摹 ??
+const sectors = [
+  { name:'?啁50撘瑕摹', up:62, down:18, flat:20 },
+  { name:'?餃?憿?, up:55, down:30, flat:15 },
+  { name:'??憿?, up:40, down:45, flat:15 },
+  { name:'銝剖?100', up:58, down:25, flat:17 },
+  { name:'?喟憿?, up:35, down:50, flat:15 },
+  { name:'?芷?憿?, up:70, down:20, flat:10 },
+];
+
+function drawPie(canvas, up, down, flat, size) {
+  const ctx = canvas.getContext('2d');
+  canvas.width = size; canvas.height = size;
+  const cx = size/2, cy = size/2, r = size/2 - 3;
+  const slices = [
+    { val: up,   color: '#1fd67a' },
+    { val: down, color: '#f03a5f' },
+    { val: flat, color: '#2a3550' },
+  ];
+  let startA = -Math.PI/2;
+  const total = up+down+flat;
+  slices.forEach(s => {
+    const angle = (s.val/total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,startA,startA+angle);
+    ctx.closePath();
+    ctx.fillStyle = s.color;
+    ctx.fill();
+    startA += angle;
+  });
+  // Center hole
+  ctx.beginPath();
+  ctx.arc(cx,cy,r*0.42,0,Math.PI*2);
+  ctx.fillStyle = '#0d1018';
+  ctx.fill();
+  // Percent text
+  ctx.font = `bold ${Math.floor(size*0.18)}px JetBrains Mono`;
+  ctx.fillStyle = '#1fd67a';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(up+'%', cx, cy);
+}
+
+const grid = document.getElementById('sector-grid');
+sectors.forEach(s => {
+  const item = document.createElement('div');
+  item.className = 'sector-item';
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'sector-name';
+  nameDiv.textContent = s.name;
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'width:78px;height:78px';
+  item.appendChild(nameDiv);
+  item.appendChild(canvas);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.style.cssText = 'display:flex;gap:6px;font-size:7px';
+  legend.innerHTML = `
+    <span style="color:#1fd67a">??${s.up}%</span>
+    <span style="color:#f03a5f">??${s.down}%</span>
+    <span style="color:#2a3550">? ${s.flat}%</span>`;
+  item.appendChild(legend);
+  grid.appendChild(item);
+  drawPie(canvas, s.up, s.down, s.flat, 78);
+});
+
+// ?? Bottom charts ??
+
+// Shared: draw bar + candle charts on canvas
+function drawBarChart(canvasId, items, type) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const W = Math.max(rect.width - 16, 260);
+  const H = Math.max(rect.height - 12, 120);
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  const leftPad = 42;
+  const rightPad = 14;
+  const topPad = 10;
+  const bottomPad = 24;
+  const plotW = W - leftPad - rightPad;
+  const plotH = H - topPad - bottomPad;
+  const midY = topPad + plotH / 2;
+
+  const maxAbs = Math.max(...items.map(i => Math.abs(i.val)), 0.5);
+  const yFor = (v) => midY - (v / maxAbs) * (plotH * 0.45);
+
+  // Horizontal grid + Y axis labels
+  const ticks = [maxAbs, maxAbs * 0.5, 0, -maxAbs * 0.5, -maxAbs];
+  ctx.font = '12px Noto Sans TC';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ticks.forEach((t) => {
+    const y = yFor(t);
+    ctx.beginPath();
+    ctx.moveTo(leftPad, y);
+    ctx.lineTo(W - rightPad, y);
+    ctx.strokeStyle = t === 0 ? '#2b3650' : '#1a2236';
+    ctx.lineWidth = t === 0 ? 1.2 : 0.8;
+    ctx.setLineDash(t === 0 ? [3,3] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#6a7a99';
+    ctx.fillText(t.toFixed(2), leftPad - 6, y);
+  });
+
+  // Y axis line
+  ctx.beginPath();
+  ctx.moveTo(leftPad, topPad);
+  ctx.lineTo(leftPad, H - bottomPad);
+  ctx.strokeStyle = '#2b3650';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const n = items.length;
+  const gap = 2;
+  const barW = Math.max(6, Math.floor((plotW - (n - 1) * gap) / n));
+
+  items.forEach((item, i) => {
+    const x = leftPad + i * (barW + gap);
+    const barH = Math.abs(item.val / maxAbs) * (plotH * 0.45);
+    const isUp = item.val >= 0;
+    const color = isUp ? '#f03a5f' : '#1fd67a';
+    const y = isUp ? midY - barH : midY;
+
+    ctx.fillStyle = color + (type==='spread' ? 'aa' : 'cc');
+    ctx.fillRect(x, y, barW, barH);
+
+    ctx.font = '11px Noto Sans TC';
+    ctx.fillStyle = '#6a7a99';
+    ctx.textAlign = 'center';
+    const label = item.label.length > 3 ? item.label.slice(0,2) : item.label;
+    ctx.fillText(label, x + barW/2, H - 8);
+  });
+}
+
+// ??Weight stocks
+const weightItems = [
+  {label:'?唳?', val:-1.23},{label:'?餃?', val:-0.85},{label:'??', val:0.42},
+  {label:'?喟', val:-0.67},{label:'?啁?', val:-1.05},{label:'暾餅絲', val:0.31},
+  {label:'?舐蝘?, val:-0.78},{label:'?圈???, val:-0.52},{label:'?舫', val:0.28},
+  {label:'銝凋縑??, val:0.81},{label:'?陸??, val:-0.44},{label:'撖??, val:0.74},
+  {label:'?交???, val:0.64},{label:'撱??', val:-1.12},{label:'隞窄', val:-0.33},
+];
+
+// ??Sector futures (candle-style bars)
+const sectorItems = [
+  {label:'?唳?', val:-1.85},{label:'?唳?', val:-1.23},{label:'瘚琿?', val:2.14},
+  {label:'銝剝', val:-0.95},{label:'?極', val:-0.44},{label:'?啁?', val:-1.35},
+  {label:'憭抒?', val:-2.01},{label:'?圈?', val:0.55},{label:'瘜啣?', val:-0.33},
+  {label:'??', val:-1.66},{label:'?圈', val:0.88},{label:'鞊?, val:-0.72},
+  {label:'撌典?', val:1.44},{label:'??', val:-0.31},{label:'??', val:-0.88},
+];
+
+// ??Spread
+const spreadItems = [
+  {label:'?唳?', val:0.12},{label:'?餃?', val:-0.33},{label:'??', val:0.18},
+  {label:'?喟', val:-0.07},{label:'?啁?', val:0.42},
+];
+
+setTimeout(() => {
+  drawBarChart('bar-weight', weightItems, 'weight');
+  drawBarChart('bar-sector', sectorItems, 'sector');
+  drawBarChart('bar-spread', spreadItems, 'spread');
+}, 50);
+
+// ?? Flow canvas (mini trend) ??
+function drawFlowLine() {
+  const canvas = document.getElementById('flow-canvas');
+  if (!canvas) return;
+  const pw = canvas.parentElement.getBoundingClientRect().width;
+  const W = Math.max(pw - 16, 100);
+  const H = 50;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  // Generate mock data
+  const pts = Array.from({length:20},(_,i)=>({
+    x: i/(19)*(W-4)+2,
+    y: H/2 + Math.sin(i*0.6)*12 + (Math.random()-0.5)*6
+  }));
+  ctx.beginPath();
+  pts.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle = '#3d84ff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  // Fill
+  ctx.lineTo(pts[pts.length-1].x, H);
+  ctx.lineTo(pts[0].x, H);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(61,132,255,0.08)';
+  ctx.fill();
+  // Zero
+  ctx.beginPath();
+  ctx.moveTo(0,H/2); ctx.lineTo(W,H/2);
+  ctx.strokeStyle = '#1c2236';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2,3]);
+  ctx.stroke();
+}
+setTimeout(drawFlowLine, 50);
+
+// Resize handler
+window.addEventListener('resize', () => {
+  setTimeout(() => {
+    drawBarChart('bar-weight', weightItems, 'weight');
+    drawBarChart('bar-sector', sectorItems, 'sector');
+    drawBarChart('bar-spread', spreadItems, 'spread');
+    drawFlowLine();
+  }, 100);
+});
+
+// ?? Live price tick simulation ??
+let wIdx = 10879.47;
+setInterval(() => {
+  wIdx += (Math.random()-0.52)*3;
+  const chg = wIdx - 11013.26;
+  document.getElementById('w-val').textContent = wIdx.toFixed(2);
+  document.getElementById('w-chg').textContent = (chg>=0?'+':'')+chg.toFixed(2);
+}, 2400);
+</script>
+</body>
+</html>
+
+
