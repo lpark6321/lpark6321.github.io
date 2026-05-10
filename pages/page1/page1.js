@@ -476,9 +476,16 @@ export function mount(container) {
           <div class="p1-chart-tabs" id="p1-chart-tabs">
             <button data-k="lightweight" class="is-active">自有資料</button>
             <button data-k="tradingview">TradingView</button>
+            <button data-k="chartinglib">Charting Library</button>
           </div>
           <div class="p1-chart-pane" id="p1-chart-lightweight"></div>
           <div class="p1-chart-pane" id="p1-chart-tradingview" style="display:none"></div>
+          <div class="p1-chart-pane p1-chart-placeholder" id="p1-chart-chartinglib" style="display:none">
+            <div>
+              <strong>Charting Library 預留區</strong>
+              <span>日後接 TradingView Charting Library / UDF datafeed 時會掛載在這裡。</span>
+            </div>
+          </div>
         </div>
       </section>
       <div class="grid-splitter-v p1-splitter-right" id="p1-split-right"></div>
@@ -804,6 +811,7 @@ export function mount(container) {
 
   const chartLightweightEl = container.querySelector('#p1-chart-lightweight');
   const chartTradingViewEl = container.querySelector('#p1-chart-tradingview');
+  const chartingLibraryEl = container.querySelector('#p1-chart-chartinglib');
 
   const mountLightweight = () => {
     mountMarketChart(chartLightweightEl, chartOptions)
@@ -829,6 +837,7 @@ export function mount(container) {
     });
     chartLightweightEl.style.display = activeChartTab === 'lightweight' ? '' : 'none';
     chartTradingViewEl.style.display = activeChartTab === 'tradingview' ? '' : 'none';
+    chartingLibraryEl.style.display = activeChartTab === 'chartinglib' ? '' : 'none';
     if (activeChartTab === 'tradingview') mountTradingViewTab();
   };
 
