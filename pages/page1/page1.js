@@ -2,7 +2,8 @@
 import { Panel } from '../../components/Panel.js';
 import { Sparkline } from '../../components/Sparkline.js';
 import { StockCard } from '../../components/StockCard.js';
-import { mountTradingView } from '../../services/tradingview.js';
+import { mountMarketChart } from '../../services/marketChart.js';
+import { mountTradingViewWidget } from '../../services/tradingview.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 let cleanup = () => {};
@@ -469,7 +470,17 @@ export function mount(container) {
     <div class="p1-layout" id="p1-layout">
       <aside class="p1-left" id="p1-left"></aside>
       <div class="grid-splitter-v p1-splitter-left" id="p1-split-left"></div>
-      <section class="panel p1-center p1-resize"><div class="panel__header"><span class="panel__badge">C</span><h3 class="panel__title">TAIEX FUTURES 主圖</h3></div><div class="panel__body p1-tv" id="p1-tv"></div></section>
+      <section class="panel p1-center p1-resize">
+        <div class="panel__header"><span class="panel__badge">C</span><h3 class="panel__title">TAIEX FUTURES 主圖</h3></div>
+        <div class="panel__body p1-tv">
+          <div class="p1-chart-tabs" id="p1-chart-tabs">
+            <button data-k="lightweight" class="is-active">自有資料</button>
+            <button data-k="tradingview">TradingView</button>
+          </div>
+          <div class="p1-chart-pane" id="p1-chart-lightweight"></div>
+          <div class="p1-chart-pane" id="p1-chart-tradingview" style="display:none"></div>
+        </div>
+      </section>
       <div class="grid-splitter-v p1-splitter-right" id="p1-split-right"></div>
       <aside class="p1-right" id="p1-right"></aside>
       <section class="panel p1-bottom p1-resize"><div class="panel__header"><span class="panel__badge">B</span><h3 class="panel__title">多功能看板</h3></div><div class="panel__body"><div class="p1-b-tabs" id="p1-b-tabs"></div><div id="p1-b-content" class="p1-b-content"></div></div></section>
@@ -767,14 +778,71 @@ export function mount(container) {
     container.querySelector('#p1-clock').textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
   }, 1000);
 
-  let stopTv = () => {};
-  mountTradingView(container.querySelector('#p1-tv'), { symbol: 'INDEX:TWII', interval: 'D' })//TWSE:TAIEX或TAIEX FUTURES
-    .then((fn) => { stopTv = fn; })
-    .catch(() => { container.querySelector('#p1-tv').innerHTML = '<div style="color:var(--text2)">TradingView 載入失敗</div>'; });
+  const chartOptions = {
+    symbol: 'INDEX:TWII',
+    timeframe: 'D',
+    pollMs: 15000,
+    // TODO: replace with your backend/proxy endpoint for TAIFEX OHLCV data.
+    // Expected JSON/CSV fields: time/open/high/low/close/volume.
+    taifexUrl: '',
+    symbols: [
+      { label: '加權指數', value: 'INDEX:TWII', source: 'yahoo' },
+      { label: '台積電', value: '2330', source: 'yahoo' },
+      { label: '台指期', value: 'TXF', source: 'taifex', type: 'future' }
+    ],
+    timeframes: [
+      { label: '1m', value: '1m' },
+      { label: '5m', value: '5m' },
+      { label: '日K', value: 'D' }
+    ]
+  };
+
+  let activeChartTab = 'lightweight';
+  let stopLightweightChart = () => {};
+  let stopTradingViewWidget = () => {};
+  let tradingViewMounted = false;
+
+  const chartLightweightEl = container.querySelector('#p1-chart-lightweight');
+  const chartTradingViewEl = container.querySelector('#p1-chart-tradingview');
+
+  const mountLightweight = () => {
+    mountMarketChart(chartLightweightEl, chartOptions)
+      .then((fn) => { stopLightweightChart = fn; })
+      .catch(() => { chartLightweightEl.innerHTML = '<div style="color:var(--text2)">Lightweight Charts 載入失敗</div>'; });
+  };
+
+  const mountTradingViewTab = () => {
+    if (tradingViewMounted) return;
+    tradingViewMounted = true;
+    mountTradingViewWidget(chartTradingViewEl, {
+      symbol: 'INDEX:TWII',
+      interval: 'D'
+    })
+      .then((fn) => { stopTradingViewWidget = fn; })
+      .catch(() => { chartTradingViewEl.innerHTML = '<div style="color:var(--text2)">TradingView 載入失敗</div>'; });
+  };
+
+  const setChartTab = (tab) => {
+    activeChartTab = tab;
+    container.querySelectorAll('#p1-chart-tabs button').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.k === activeChartTab);
+    });
+    chartLightweightEl.style.display = activeChartTab === 'lightweight' ? '' : 'none';
+    chartTradingViewEl.style.display = activeChartTab === 'tradingview' ? '' : 'none';
+    if (activeChartTab === 'tradingview') mountTradingViewTab();
+  };
+
+  container.querySelectorAll('#p1-chart-tabs button').forEach((btn) => {
+    btn.addEventListener('click', () => setChartTab(btn.dataset.k));
+  });
+
+  mountLightweight();
 
   cleanup = () => {
     unsubTaiex(); unsubFut(); unsubTop(); unsubWatch();
-    clearInterval(clockTimer); stopTv();
+    clearInterval(clockTimer);
+    stopLightweightChart();
+    stopTradingViewWidget();
     monitorResize.disconnect();
     trendResize.disconnect();
     if (ampResizeObserver) ampResizeObserver.disconnect();
