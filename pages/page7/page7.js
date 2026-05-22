@@ -1,9 +1,11 @@
-﻿import { store } from '../../data/store.js';
+// Page7 掛載邏輯：呈現指定頁面的交易/行情內容並訂閱 store 更新。
+import { store } from '../../data/store.js';
 import { IndexCard } from '../../components/IndexCard.js';
 import { WorldClockStrip } from '../../components/WorldClockStrip.js';
 import { isMarketOpen, setUsDstMode } from '../../services/marketCalendar.js';
 import { simulateGlobalIndices } from '../../services/priceSimulator.js';
 
+// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
 const ASIA_IDS = new Set(['kospi', 'nikkei', 'hsi', 'shanghai']);
@@ -11,7 +13,9 @@ const US_IDS = new Set(['nasdaq', 'sox', 'dow', 'sp500', 'vix', 'gold', 'us10y',
 const FX_IDS = new Set(['eurusd', 'usdjpy', 'gbpusd', 'audusd', 'usdtwd']);
 const CRYPTO_IDS = new Set(['btcusd', 'ethusd', 'solusd', 'xrpusd']);
 
+// mount：函式用途註解，說明此處封裝一段可重用的流程。
 export function mount(container) {
+  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 7｜全球指數看板</h2></div>
     <div class="p7-grid">
@@ -36,14 +40,20 @@ export function mount(container) {
   const fxWrap = container.querySelector('#p7-cards-fx');
   const cryptoWrap = container.querySelector('#p7-cards-crypto');
 
+  // renderSection：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderSection = (rows, wrap) => rows.forEach((row) => cards.push(new IndexCard(wrap, { data: row })));
 
+  // render：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const render = (rows) => {
     cards.forEach((c) => c.destroy());
     cards = [];
+    // 段落說明：更新 DOM 內容。
     asiaWrap.innerHTML = '';
+    // 段落說明：更新 DOM 內容。
     usWrap.innerHTML = '';
+    // 段落說明：更新 DOM 內容。
     fxWrap.innerHTML = '';
+    // 段落說明：更新 DOM 內容。
     cryptoWrap.innerHTML = '';
 
     renderSection(rows.filter((r) => ASIA_IDS.has(r.id)), asiaWrap);
@@ -52,12 +62,14 @@ export function mount(container) {
     renderSection(rows.filter((r) => CRYPTO_IDS.has(r.id)), cryptoWrap);
   };
 
+  // 段落說明：綁定使用者互動事件。
   container.querySelector('#p7-dst').addEventListener('change', (e) => {
     setUsDstMode(e.target.value);
     render(store.get('globalIndices'));
   });
 
   render(store.get('globalIndices'));
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsub = store.subscribe('globalIndices', render);
 
   cleanup = () => {
@@ -66,9 +78,11 @@ export function mount(container) {
     strip.destroy();
   };
 
+  // 段落說明：回傳目前頁面的清理函式。
   return cleanup;
 }
 
+// unmount：函式用途註解，說明此處封裝一段可重用的流程。
 export function unmount() {
   cleanup();
   cleanup = () => {};

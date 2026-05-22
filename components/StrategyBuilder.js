@@ -1,6 +1,9 @@
-﻿import { store } from '../data/store.js';
+// 策略建立器元件：組合選擇權腿、估算損益並同步 store。
+import { store } from '../data/store.js';
 
+// calcSummary：函式用途註解，說明此處封裝一段可重用的流程。
 function calcSummary(legs) {
+  // net：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const net = legs.reduce((acc, l) => {
     if (l.type === 'future') return acc;
     return acc + (l.action === 'buy' ? -1 : 1) * l.premium * l.qty;
@@ -13,15 +16,20 @@ function calcSummary(legs) {
   };
 }
 
+// nearestStrike：函式用途註解，說明此處封裝一段可重用的流程。
 function nearestStrike(strikes, target) {
   return strikes.reduce((best, s) => Math.abs(s - target) < Math.abs(best - target) ? s : best, strikes[0]);
 }
 
+// StrategyBuilder：類別用途註解，集中管理相關狀態與方法。
 export class StrategyBuilder {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
     this.collapsed = false;
+    // 段落說明：建立新的 DOM 節點。
     this.root = document.createElement('section');
     this.root.className = 'panel';
+    // 段落說明：更新 DOM 內容。
     this.root.innerHTML = `
       <div class="panel__header"><span class="panel__badge">S</span><h3 class="panel__title">策略組合</h3><button class="sb-toggle" style="margin-left:auto">收合</button></div>
       <div class="panel__body sb-body">
@@ -30,7 +38,9 @@ export class StrategyBuilder {
         <div class="summary" style="margin-top:8px;color:var(--text2)"></div>
       </div>
     `;
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.root);
+    // 段落說明：綁定使用者互動事件。
     this.root.querySelector('.sb-toggle').addEventListener('click', () => this.toggle());
     this.renderInputs();
     this.renderPresets();
@@ -40,6 +50,7 @@ export class StrategyBuilder {
     }
   }
 
+  // toggle：方法用途註解，處理此元件或類別的一段行為。
   toggle() {
     this.collapsed = !this.collapsed;
     this.root.querySelector('.sb-body').style.display = this.collapsed ? 'none' : '';
@@ -47,10 +58,13 @@ export class StrategyBuilder {
     this.root.querySelector('.sb-toggle').textContent = this.collapsed ? '展開' : '收合';
   }
 
+  // renderInputs：方法用途註解，處理此元件或類別的一段行為。
   renderInputs() {
     const chain = store.get('optionsChain');
+    // strikes：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const strikes = [...new Set([...chain.calls.map((x) => x.strike), ...chain.puts.map((x) => x.strike)])];
     const wrap = this.root.querySelector('.inputs');
+    // 段落說明：更新 DOM 內容。
     wrap.innerHTML = `
       <select class="type"><option value="call">Call</option><option value="put">Put</option></select>
       <select class="action"><option value="buy">Buy</option><option value="sell">Sell</option></select>
@@ -59,6 +73,7 @@ export class StrategyBuilder {
       <input class="input premium" type="number" value="100" min="1" />
       <button class="add">新增腳位</button>
     `;
+    // 段落說明：綁定使用者互動事件。
     wrap.querySelector('.add').addEventListener('click', () => {
       const legs = store.get('strategyLegs');
       legs.push({
@@ -73,9 +88,11 @@ export class StrategyBuilder {
     });
   }
 
+  // getPresets：方法用途註解，處理此元件或類別的一段行為。
   getPresets() {
     const chain = store.get('optionsChain');
     const spot = chain.spotPrice;
+    // strikes：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const strikes = [...new Set([...chain.calls.map((x) => x.strike), ...chain.puts.map((x) => x.strike)])].sort((a, b) => a - b);
     const atm = nearestStrike(strikes, spot);
     const up1 = nearestStrike(strikes, atm + 100);
@@ -166,12 +183,16 @@ export class StrategyBuilder {
     };
   }
 
+  // renderPresets：方法用途註解，處理此元件或類別的一段行為。
   renderPresets() {
     const presets = this.getPresets();
     const box = this.root.querySelector('.presets');
+    // 段落說明：更新 DOM 內容。
     box.innerHTML = Object.keys(presets).map((p) => `<button data-p="${p}">${p}</button>`).join('');
     box.querySelectorAll('button').forEach((btn) => {
+      // 段落說明：綁定使用者互動事件。
       btn.addEventListener('click', () => {
+        // legs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
         const legs = presets[btn.dataset.p].map((x) => ({ ...x }));
         store.set('strategyLegs', legs);
         this.updateSummary();
@@ -179,12 +200,16 @@ export class StrategyBuilder {
     });
   }
 
+  // updateSummary：方法用途註解，處理此元件或類別的一段行為。
   updateSummary() {
     const summary = calcSummary(store.get('strategyLegs'));
+    // 段落說明：更新 DOM 內容。
     this.root.querySelector('.summary').innerHTML = `
       Net ${summary.net >= 0 ? 'Credit' : 'Debit'}: <b>${summary.net}</b> | Max Profit: <b>${summary.maxProfit}</b> | Max Loss: <b>${summary.maxLoss}</b> | Breakeven: <b>${summary.breakeven}</b>
     `;
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
+  // 段落說明：移除 DOM 節點或釋放畫面資源。
   destroy() { this.root.remove(); }
 }

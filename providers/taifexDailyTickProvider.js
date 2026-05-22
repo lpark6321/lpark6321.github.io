@@ -1,11 +1,15 @@
+// 期交所每日逐筆資料提供者：解析逐筆資料並產出期貨行情。
 import { BaseMarketDataProvider } from './baseProvider.js';
 
+// parseCsv：函式用途註解，說明此處封裝一段可重用的流程。
 function parseCsv(text) {
   const lines = text.split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
+  // headers：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const headers = lines[0].split(',').map((item) => item.trim());
 
   return lines.slice(1).map((line) => {
+    // values：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const values = line.split(',').map((item) => item.trim());
     return headers.reduce((record, header, index) => {
       record[header] = values[index];
@@ -14,6 +18,7 @@ function parseCsv(text) {
   });
 }
 
+// pickValue：函式用途註解，說明此處封裝一段可重用的流程。
 function pickValue(record, keys) {
   for (const key of keys) {
     if (record[key] !== undefined && record[key] !== '') {
@@ -23,7 +28,9 @@ function pickValue(record, keys) {
   return undefined;
 }
 
+// TaifexDailyTickProvider：類別用途註解，集中管理相關狀態與方法。
 export class TaifexDailyTickProvider extends BaseMarketDataProvider {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(options) {
     super({
       type: 'taifex',
@@ -35,11 +42,13 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
     this.dataUrl = options.dataUrl || '';
   }
 
+  // requestRemoteData：方法用途註解，處理此元件或類別的一段行為。
   async requestRemoteData() {
     if (!this.dataUrl) {
       throw new Error('Provide a TAIFEX daily tick CSV or JSON URL first');
     }
 
+    // 段落說明：呼叫外部資料來源並等待回應。
     const response = await fetch(this.dataUrl, {
       method: 'GET',
       headers: {
@@ -61,6 +70,7 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
       throw new Error('TAIFEX daily tick payload is empty');
     }
 
+    // txRows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const txRows = rows.filter((row) => {
       const contract = String(pickValue(row, ['contract', 'Contract', 'contract_id', '商品代號', '商品名稱']) || '');
       return contract.includes('TX');
@@ -85,6 +95,7 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
     return this.mergeRecords(map);
   }
 
+  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
   async fetchQuotes(options = {}) {
     return this.withCache(options, () => this.requestRemoteData());
   }

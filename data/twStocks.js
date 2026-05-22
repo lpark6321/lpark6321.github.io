@@ -1,3 +1,4 @@
+// 台股靜態股票宇宙：提供市場地圖與模擬行情使用的基礎股票資料。
 export const TW_STOCK_UNIVERSE = [
   // 半導體
   { code: '2330', name: '台積電', sector: '半導體', subSector: '晶圓代工', marketCap: 25000, isIn0050: true },

@@ -27,6 +27,11 @@
       </div>
       <div class="shell__actions">
         <a class="shell__link" href="./index.html">Data Lab</a>
+        <label class="shell-source" for="dashboard-data-source">
+          <span class="shell-source__label">資料來源</span>
+          <select class="shell-source__select" id="dashboard-data-source"></select>
+        </label>
+        <span class="shell-source-status" id="dashboard-data-source-status"></span>
         <nav class="tabbar" aria-label="Pages">
           <button class="tabbar__tab" type="button" data-page="page1">PAGE 1 Futures Overview</button>
           <button class="tabbar__tab" type="button" data-page="page2">PAGE 2 Market Temperature</button>
@@ -42,10 +47,20 @@
   </div>
 
   <script type="module">
+    import {
+      DASHBOARD_DATA_SOURCES,
+      getDashboardDataSource,
+      getDashboardDataSourceLabel,
+      setDashboardDataSource,
+      subscribeDashboardDataSource
+    } from './services/dashboardDataSource.js';
     import { startPriceSimulator } from './services/priceSimulator.js';
+    import { startYahooTaiexPoller, updateYahooTaiexOnce } from './services/yahooTaiexPoller.js';
 
     const app = document.getElementById('app');
     const tabs = [...document.querySelectorAll('.tabbar__tab')];
+    const dataSourceSelect = document.getElementById('dashboard-data-source');
+    const dataSourceStatus = document.getElementById('dashboard-data-source-status');
 
     const pageModules = {
       page1: () => import('./pages/page1/page1.js'),
@@ -57,7 +72,31 @@
       page7: () => import('./pages/page7/page7.js')
     };
 
+    function renderDataSourceControl(source = getDashboardDataSource()) {
+      dataSourceSelect.innerHTML = DASHBOARD_DATA_SOURCES
+        .map((item) => `<option value="${item.value}">${item.label}</option>`)
+        .join('');
+      dataSourceSelect.value = source;
+      dataSourceStatus.textContent = source === 'yahoo'
+        ? '全站共用：每 10 秒更新'
+        : `全站共用：${getDashboardDataSourceLabel(source)}`;
+    }
+
+    renderDataSourceControl();
+    dataSourceSelect.addEventListener('change', () => {
+      const source = setDashboardDataSource(dataSourceSelect.value);
+      renderDataSourceControl(source);
+      if (source === 'yahoo') {
+        updateYahooTaiexOnce({ force: true }).catch((error) => {
+          console.warn('[dashboard] Yahoo refresh failed:', error);
+        });
+      }
+    });
+
+    subscribeDashboardDataSource((source) => renderDataSourceControl(source));
+
     startPriceSimulator();
+    startYahooTaiexPoller({ pollMs: 10000 });
 
     const loaded = new Map();
     let activePage = null;

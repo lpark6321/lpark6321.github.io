@@ -1,21 +1,26 @@
+// Page2 掛載邏輯：呈現市場監控區塊並處理可調整大小的版面。
 import { store } from '../../data/store.js';
 import { Panel } from '../../components/Panel.js';
 import { Gauge } from '../../components/Gauge.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
 
+// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
 const TOP10_CODES = ['2330', '2308', '2317', '2454', '3711', '2881', '2382', '2412', '2882', '2891'];
 const CATEGORY_KEYS = ['台指', '電子', '金融', '傳產', '摩台'];
 
+// c：函式用途註解，說明此處封裝一段可重用的流程。
 function c(v) {
   return v >= 0 ? 'metric-up' : 'metric-down';
 }
 
+// clamp：函式用途註解，說明此處封裝一段可重用的流程。
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+// resolveCanvasSize：函式用途註解，說明此處封裝一段可重用的流程。
 function resolveCanvasSize(canvas, options = {}) {
   const maxWidth = options.maxWidth ?? 560;
   const minWidth = options.minWidth ?? 220;
@@ -27,6 +32,7 @@ function resolveCanvasSize(canvas, options = {}) {
   return { w: width, h: targetHeight };
 }
 
+// drawAxis：函式用途註解，說明此處封裝一段可重用的流程。
 function drawAxis(ctx, w, h, minV, maxV, options = {}) {
   const left = options.left ?? 44;
   const right = options.right ?? 10;
@@ -34,6 +40,7 @@ function drawAxis(ctx, w, h, minV, maxV, options = {}) {
   const bottom = options.bottom ?? 20;
   const ticks = options.ticks ?? [minV, (minV + maxV) / 2, maxV];
   const range = maxV - minV || 1;
+  // y：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const y = (v) => top + (1 - (v - minV) / range) * (h - top - bottom);
 
   ctx.strokeStyle = '#ffffff33';
@@ -59,11 +66,15 @@ function drawAxis(ctx, w, h, minV, maxV, options = {}) {
   return { left, right, y };
 }
 
+// drawBars：函式用途註解，說明此處封裝一段可重用的流程。
 function drawBars(canvas, items, options = {}) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const { w, h } = resolveCanvasSize(canvas, { maxWidth: options.maxWidth ?? 560, height: 240, minWidth: 260 });
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
 
+  // maxAbs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const maxAbs = Math.max(2, ...items.map((x) => Math.abs(x.value)));
   const axisBottom = options.axisBottom ?? 20;
   const { left, right, y } = drawAxis(ctx, w, h, -maxAbs, maxAbs, { bottom: axisBottom, ticks: options.ticks });
@@ -93,12 +104,17 @@ function drawBars(canvas, items, options = {}) {
   });
 }
 
+// drawCategoryCandle：函式用途註解，說明此處封裝一段可重用的流程。
 function drawCategoryCandle(canvas, items, options = {}) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const { w, h } = resolveCanvasSize(canvas, { maxWidth: options.maxWidth ?? 560, height: 240, minWidth: 260 });
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
 
+  // highs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const highs = items.map((x) => x.high);
+  // lows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const lows = items.map((x) => x.low);
   const minV = options.minV ?? Math.min(...lows);
   const maxV = options.maxV ?? Math.max(...highs);
@@ -131,7 +147,9 @@ function drawCategoryCandle(canvas, items, options = {}) {
   });
 }
 
+// drawSectorPie：函式用途註解，說明此處封裝一段可重用的流程。
 function drawSectorPie(canvas, data, options = {}) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const size = options.size || 120;
   const dpr = window.devicePixelRatio || 1;
@@ -141,6 +159,7 @@ function drawSectorPie(canvas, data, options = {}) {
   canvas.width = Math.floor(box * dpr);
   canvas.height = Math.floor(box * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, box, box);
 
   const cx = box / 2;
@@ -151,6 +170,7 @@ function drawSectorPie(canvas, data, options = {}) {
     { value: data.flatPct, color: '#d0d0d0' },
     { value: data.downPct, color: '#f4867c' }
   ];
+  // total：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
   let start = -Math.PI / 2;
 
@@ -166,9 +186,13 @@ function drawSectorPie(canvas, data, options = {}) {
   });
 }
 
+// getCategoryStats：函式用途註解，說明此處封裝一段可重用的流程。
 function getCategoryStats(taiex, sectors) {
+  // ele：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const ele = sectors.find((s) => s.name === '電子');
+  // fin：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const fin = sectors.find((s) => s.name === '金融');
+  // tra：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const tra = sectors.find((s) => s.name === '傳產') || sectors.find((s) => s.name === '航運');
 
   const elePct = ele ? +(((ele.upPct - ele.downPct) / 25).toFixed(2)) : 0;
@@ -185,6 +209,7 @@ function getCategoryStats(taiex, sectors) {
   ];
 }
 
+// estimateSessionVolume：函式用途註解，說明此處封裝一段可重用的流程。
 function estimateSessionVolume(currentVolume) {
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
@@ -196,13 +221,17 @@ function estimateSessionVolume(currentVolume) {
   return currentVolume / progress;
 }
 
+// driftAttack：函式用途註解，說明此處封裝一段可重用的流程。
 function driftAttack(value, max) {
   return clamp(value + (Math.random() - 0.5) * 2.6, 0, max);
 }
 
+// drawEstimateSystem：函式用途註解，說明此處封裝一段可重用的流程。
 function drawEstimateSystem(canvas, taiex, futures) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const { w, h } = resolveCanvasSize(canvas, { maxWidth: 340, minWidth: 260, height: 286 });
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#07090e';
   ctx.fillRect(0, 0, w, h);
@@ -226,9 +255,13 @@ function drawEstimateSystem(canvas, taiex, futures) {
   const priceMax = priceCenter + 35;
   const spreadCenter = Number(futures.price || 0) - Number(taiex.price || 0);
 
+  // x：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const x = (i) => left + (i / (points - 1 || 1)) * plotW;
+  // yVol：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const yVol = (v) => top + (1 - (v - volMin) / (volMax - volMin || 1)) * plotH;
+  // yPrice：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const yPrice = (v) => top + (1 - (v - priceMin) / (priceMax - priceMin || 1)) * plotH;
+  // ySpread：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const ySpread = (v) => bottomTop + (1 - (v + 65) / (25 + 65)) * bottomH;
 
   const volSeries = [];
@@ -334,7 +367,9 @@ function drawEstimateSystem(canvas, taiex, futures) {
   ctx.fillText('價差走勢圖', w / 2, bottomTitleY);
 }
 
+// mount：函式用途註解，說明此處封裝一段可重用的流程。
 export function mount(container) {
+  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 2｜台股溫度計</h2><span class="page-clock" id="p2-clock"></span></div>
     <div class="p2-layout" id="p2-layout">
@@ -349,6 +384,7 @@ export function mount(container) {
   const left = container.querySelector('#p2-left');
   const center = container.querySelector('#p2-center');
   const bottom = container.querySelector('#p2-bottom');
+  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (el, name, fallback) => {
     const value = parseFloat(getComputedStyle(el).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -372,7 +408,9 @@ export function mount(container) {
     center.insertBefore(centerSplit, p5.root);
   }
 
+  // 段落說明：建立新的 DOM 節點。
   const clockBlock = document.createElement('div');
+  // 段落說明：更新 DOM 內容。
   clockBlock.innerHTML = `
     <div class="p2-bigclock" id="p2-bigclock">--:--:--</div>
     <div class="p2-vol-grid">
@@ -380,13 +418,18 @@ export function mount(container) {
       <div class="p2-vol-box">加權預估量<br><strong id="p2-vol-e"></strong></div>
     </div>
   `;
+  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(clockBlock);
 
+  // 段落說明：建立新的 DOM 節點。
   const bullWrap = document.createElement('div');
   bullWrap.className = 'p2-gauge-wrap';
+  // 段落說明：建立新的 DOM 節點。
   const bearWrap = document.createElement('div');
   bearWrap.className = 'p2-gauge-wrap';
+  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(bullWrap);
+  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(bearWrap);
 
   const gaugeBull = new Gauge(bullWrap, {
@@ -455,6 +498,8 @@ export function mount(container) {
     min: 300,
     max: 900
   });
+  // clockResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const clockResize = new ResizeObserver(() => {
     const rect = p4.body.getBoundingClientRect();
     const size = Math.max(32, Math.min(96, Math.floor(Math.min(rect.width * 0.16, rect.height * 0.18))));
@@ -462,18 +507,21 @@ export function mount(container) {
   });
   clockResize.observe(p4.body);
 
+  // renderMain：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderMain = () => {
     const t = store.get('taiex');
     const f = store.get('futures');
     const spread = +(f.price - t.price).toFixed(2);
     const estimated = estimateSessionVolume(Number(t.volume) || 0);
 
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p2-main').innerHTML = `
       <div class="p2-flow-row"><span>加權指數</span><strong class="${c(t.change)}">${t.price} / ${t.change}</strong></div>
       <div class="p2-flow-row"><span>台指期</span><strong class="${c(f.change)}">${f.price} / ${f.change}</strong></div>
       <div class="p2-flow-row"><span>價差</span><strong class="${c(spread)}">${spread}</strong></div>
     `;
 
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p2-spread').innerHTML = `
       <div class="p2-flow-row"><span>試搓預測價</span><strong class="${c(t.change)}">${t.price.toFixed(2)}</strong></div>
       <div class="p2-flow-row"><span>試搓漲跌</span><strong class="${c(t.change)}">${t.change.toFixed(2)}</strong></div>
@@ -486,7 +534,9 @@ export function mount(container) {
     drawEstimateSystem(container.querySelector('#p2-est-canvas'), t, f);
   };
 
+  // renderFlow：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderFlow = (m) => {
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p2-flow').innerHTML = `
       <div class="p2-flow-row"><span>大戶（估/實）</span><strong class="${c(m.bigPlayer.actual)}">${m.bigPlayer.estimated} / ${m.bigPlayer.actual}</strong></div>
       <div class="p2-flow-row"><span>中實戶（估/實）</span><strong class="${c(m.midPlayer.actual)}">${m.midPlayer.estimated} / ${m.midPlayer.actual}</strong></div>
@@ -494,6 +544,7 @@ export function mount(container) {
     `;
   };
 
+  // renderAttackGauge：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderAttackGauge = () => {
     const bullNeedle = (attackState.bullValue / attackState.bullMax) * 160;
     const bearNeedle = (attackState.bearValue / attackState.bearMax) * 160;
@@ -501,7 +552,9 @@ export function mount(container) {
     gaugeBear.update({ value: bearNeedle, displayValue: attackState.bearValue, displayMax: attackState.bearMax, title: '空方攻擊' });
   };
 
+  // renderSectors：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderSectors = (src) => {
+    // findSector：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const findSector = (name) => src.find((s) => s.name === name);
     const fin = findSector('金融');
     const ele = findSector('電子');
@@ -522,8 +575,10 @@ export function mount(container) {
     });
   };
 
+  // renderCharts：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderCharts = () => {
     const stocks = store.get('topStocks');
+    // top10：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const top10 = TOP10_CODES.map((code) => stocks.find((s) => s.code === code)).filter(Boolean);
 
     drawBars(
@@ -536,6 +591,7 @@ export function mount(container) {
     const sectors = store.get('sectors');
     const cat = getCategoryStats(taiex, sectors);
 
+    // candles：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const candles = cat.map((x) => {
       const close = x.chg;
       const open = +(x.chg * 0.35).toFixed(2);
@@ -548,6 +604,7 @@ export function mount(container) {
     drawBars(
       container.querySelector('#p2-c8'),
       CATEGORY_KEYS.map((k) => {
+        // hit：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
         const hit = cat.find((x) => x.label === k);
         return { label: k, value: hit ? hit.chg : 0 };
       }),
@@ -561,6 +618,8 @@ export function mount(container) {
   renderSectors(store.get('sectors'));
   renderCharts();
 
+  // estResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const estResize = new ResizeObserver(() => {
     const t = store.get('taiex');
     const f = store.get('futures');
@@ -568,39 +627,56 @@ export function mount(container) {
   });
   estResize.observe(p10.body);
 
+  // pieResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const pieResize = new ResizeObserver(() => {
     renderSectors(store.get('sectors'));
   });
   pieResize.observe(p5.body);
 
+  // chartResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const chartResize = new ResizeObserver(() => {
     renderCharts();
   });
   chartResize.observe(bottom);
 
+  // u1：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u1 = store.subscribe('taiex', () => {
     renderMain();
     renderCharts();
   });
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u2 = store.subscribe('futures', renderMain);
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u3 = store.subscribe('moneyFlow', renderFlow);
+  // u4：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u4 = store.subscribe('sectors', () => {
     renderSectors(store.get('sectors'));
     renderCharts();
   });
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u5 = store.subscribe('topStocks', renderCharts);
+  // u6：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u6 = store.subscribe('bullBear', (b) => {
     attackState.bullValue = clamp(Number(b.bull?.score) || attackState.bullValue, 0, attackState.bullMax);
     attackState.bearValue = clamp(Number(b.bear?.score) || attackState.bearValue, 0, attackState.bearMax);
     renderAttackGauge();
   });
 
+  // attackTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：建立定時更新流程。
   const attackTimer = setInterval(() => {
     attackState.bullValue = driftAttack(attackState.bullValue, attackState.bullMax);
     attackState.bearValue = driftAttack(attackState.bearValue, attackState.bearMax);
     renderAttackGauge();
   }, 2500);
 
+  // clockTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：建立定時更新流程。
   const clockTimer = setInterval(() => {
     const t = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
     container.querySelector('#p2-clock').textContent = t;
@@ -608,7 +684,9 @@ export function mount(container) {
   }, 1000);
 
   cleanup = () => {
+    // 段落說明：清除定時器，避免頁面卸載後繼續執行。
     clearInterval(clockTimer);
+    // 段落說明：清除定時器，避免頁面卸載後繼續執行。
     clearInterval(attackTimer);
     clockResize.disconnect();
     estResize.disconnect();
@@ -622,9 +700,11 @@ export function mount(container) {
     p1.destroy(); p2.destroy(); p10.destroy(); p3.destroy(); p4.destroy(); p5.destroy(); p6.destroy(); p7.destroy(); p8.destroy();
   };
 
+  // 段落說明：回傳目前頁面的清理函式。
   return cleanup;
 }
 
+// unmount：函式用途註解，說明此處封裝一段可重用的流程。
 export function unmount() {
   cleanup();
   cleanup = () => {};

@@ -1,3 +1,4 @@
+// 台灣50成分資料：提供 Page6 市場地圖分組與權重比例。
 export const TW50_DATA_DATE = '2026-04-17';
 export const TW50_SOURCE_URL = 'https://www.wantgoo.com/stock/etf/0050/constituent';
 

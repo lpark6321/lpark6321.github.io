@@ -1,3 +1,4 @@
+// 市場資料提供者基底類別：定義資料源需實作的共同方法與預設行為。
 export class BaseMarketDataProvider {
   constructor({
     type,
@@ -21,6 +22,7 @@ export class BaseMarketDataProvider {
     this.lastRequestAt = 0;
   }
 
+  // getLastData：方法用途註解，處理此元件或類別的一段行為。
   getLastData() {
     return this.cache.data;
   }
@@ -33,6 +35,7 @@ export class BaseMarketDataProvider {
     return now - this.lastRequestAt < this.minRequestGap;
   }
 
+  // setCache：方法用途註解，處理此元件或類別的一段行為。
   setCache(data) {
     this.cache = {
       timestamp: Date.now(),
@@ -40,6 +43,7 @@ export class BaseMarketDataProvider {
     };
   }
 
+  // createFallbackRecord：方法用途註解，處理此元件或類別的一段行為。
   createFallbackRecord(quote, extra = {}) {
     return {
       symbol: quote.symbol,
@@ -48,10 +52,12 @@ export class BaseMarketDataProvider {
     };
   }
 
+  // mergeRecords：方法用途註解，處理此元件或類別的一段行為。
   mergeRecords(recordsBySymbol) {
     return this.quotes.map((quote) => recordsBySymbol.get(quote.symbol) || this.createFallbackRecord(quote));
   }
 
+  // withCache：方法用途註解，處理此元件或類別的一段行為。
   async withCache({ force = false } = {}, requestFn) {
     const now = Date.now();
 
@@ -82,6 +88,7 @@ export class BaseMarketDataProvider {
     return this.inFlight;
   }
 
+  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
   async fetchQuotes() {
     throw new Error('fetchQuotes() must be implemented by a concrete provider');
   }
