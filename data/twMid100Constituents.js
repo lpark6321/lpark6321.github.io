@@ -1,3 +1,4 @@
+// 中型100成分資料：提供 Page6 市場地圖分組與權重比例。
 export const MID100_DATA_DATE = '2026-04-17';
 export const MID100_SOURCE_URL = 'https://www.wantgoo.com/stock/etf/0051/constituent';
 
@@ -15,6 +16,7 @@ const ELECTRONIC_CODES = new Set([
   '2451', '5269', '3005', '6789', '6191', '7799', '6526'
 ]);
 
+// resolveMid100Group：函式用途註解，說明此處封裝一段可重用的流程。
 function resolveMid100Group(code) {
   if (FINANCIAL_CODES.has(code)) return '金融';
   if (SHIPPING_CODES.has(code)) return '航運';

@@ -1,4 +1,5 @@
-﻿export const PATTERN_REGISTRY = [
+// 型態條件登錄表：集中定義篩選器可啟用的技術型態與判斷邏輯。
+export const PATTERN_REGISTRY = [
   {
     id: 'ma20_breakout',
     name: '突破20日均線',
@@ -49,12 +50,15 @@
   }
 ];
 
+// runPattern：函式用途註解，說明此處封裝一段可重用的流程。
 export function runPattern(id, stockSnap) {
+  // pattern：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const pattern = PATTERN_REGISTRY.find((p) => p.id === id);
   if (!pattern) return false;
   return !!pattern.condition(stockSnap);
 }
 
+// runAllPatterns：函式用途註解，說明此處封裝一段可重用的流程。
 export function runAllPatterns(stockSnap, enabledIds = null) {
   return PATTERN_REGISTRY.filter((p) => {
     if (enabledIds && !enabledIds.includes(p.id)) return false;

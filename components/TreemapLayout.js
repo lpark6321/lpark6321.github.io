@@ -1,9 +1,12 @@
+// 市場地圖布局演算法：計算方塊圖、類股群組與旭日圖所需的比例資料。
 export const SECTOR_HEADER_HEIGHT = 22;
 
+// rowSum：函式用途註解，說明此處封裝一段可重用的流程。
 function rowSum(row) {
   return row.reduce((sum, value) => sum + value, 0);
 }
 
+// worstRatio：函式用途註解，說明此處封裝一段可重用的流程。
 function worstRatio(row, rowLength) {
   if (!row.length || rowLength <= 0) return Number.POSITIVE_INFINITY;
   const sum = rowSum(row);
@@ -16,12 +19,14 @@ function worstRatio(row, rowLength) {
   );
 }
 
+// normalizeAreas：函式用途註解，說明此處封裝一段可重用的流程。
 function normalizeAreas(items, container) {
   const positive = items
     .map((item) => ({ ...item, value: Number(item.value) || 0 }))
     .filter((item) => item.value > 0);
   if (!positive.length) return [];
 
+  // totalValue：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const totalValue = positive.reduce((sum, item) => sum + item.value, 0);
   const totalArea = Math.max(container.w, 0) * Math.max(container.h, 0);
   return positive.map((item) => ({
@@ -30,6 +35,7 @@ function normalizeAreas(items, container) {
   }));
 }
 
+// layoutRow：函式用途註解，說明此處封裝一段可重用的流程。
 function layoutRow(rowItems, rowAreas, rect, horizontal) {
   const result = [];
   const totalArea = rowSum(rowAreas);
@@ -74,10 +80,12 @@ function layoutRow(rowItems, rowAreas, rect, horizontal) {
   };
 }
 
+// squarify：函式用途註解，說明此處封裝一段可重用的流程。
 export function squarify(items, container) {
   if (!Array.isArray(items) || !items.length) return [];
   if (container.w <= 0 || container.h <= 0) return [];
 
+  // sorted：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const sorted = normalizeAreas(items, container).sort((a, b) => b.area - a.area);
   if (!sorted.length) return [];
 
@@ -117,6 +125,7 @@ export function squarify(items, container) {
   });
 }
 
+// shrinkRect：函式用途註解，說明此處封裝一段可重用的流程。
 function shrinkRect(rect, inset) {
   const x = rect.x + inset;
   const y = rect.y + inset;
@@ -130,17 +139,21 @@ function shrinkRect(rect, inset) {
   };
 }
 
+// computeSectorAvg：函式用途註解，說明此處封裝一段可重用的流程。
 export function computeSectorAvg(stocks) {
   if (!stocks.length) return 0;
+  // total：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const total = stocks.reduce((sum, stock) => sum + (Number(stock.changePct) || 0), 0);
   return total / stocks.length;
 }
 
+// layoutWithGroups：函式用途註解，說明此處封裝一段可重用的流程。
 export function layoutWithGroups(sectors, containerW, containerH, gapBetweenSectors = 2, gapBetweenTiles = 1) {
   if (!Array.isArray(sectors) || !sectors.length) return [];
 
   const sectorItems = sectors
     .map((sector) => {
+      // value：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const value = sector.stocks.reduce((sum, stock) => {
         return sum + (Number(stock.value) || Number(stock.marketCap) || 0);
       }, 0);
@@ -168,6 +181,7 @@ export function layoutWithGroups(sectors, containerW, containerH, gapBetweenSect
       .filter((stock) => stock.value > 0)
       .sort((a, b) => b.value - a.value);
 
+    // stockRects：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const stockRects = squarify(stockItems, stockContainer).map((stockRect) => ({
       ...stockRect,
       rect: shrinkRect(stockRect, gapBetweenTiles / 2)

@@ -1,3 +1,4 @@
+// 方塊圖 Canvas 元件：負責市場地圖繪製、滑鼠命中測試與互動事件。
 import { layoutWithGroups, computeSectorAvg, SECTOR_HEADER_HEIGHT } from './TreemapLayout.js';
 import { TW50_MAJOR_GROUP_ORDER } from '../data/tw50Constituents.js';
 import { MID100_MAJOR_GROUP_ORDER } from '../data/twMid100Constituents.js';
@@ -124,11 +125,15 @@ const ELECTRONIC_SECTOR_SET = new Set([
   '其他電子業'
 ]);
 
+// TreemapCanvas：類別用途註解，集中管理相關狀態與方法。
 export class TreemapCanvas {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container) {
     this.container = container;
+    // 段落說明：建立新的 DOM 節點。
     this.canvas = document.createElement('canvas');
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;cursor:crosshair';
+    // 段落說明：將建立好的節點掛回頁面。
     this.container.appendChild(this.canvas);
 
     this.stocks = [];
@@ -143,10 +148,14 @@ export class TreemapCanvas {
     this._onMouseMove = (e) => this._handleMouseMove(e);
     this._onMouseLeave = () => this._handleMouseLeave();
     this._onClick = (e) => this._handleClick(e);
+    // 段落說明：綁定使用者互動事件。
     this.canvas.addEventListener('mousemove', this._onMouseMove);
+    // 段落說明：綁定使用者互動事件。
     this.canvas.addEventListener('mouseleave', this._onMouseLeave);
+    // 段落說明：綁定使用者互動事件。
     this.canvas.addEventListener('click', this._onClick);
 
+    // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
     this._resizeObserver = new ResizeObserver(() => {
       this._computeLayout();
       this.render();
@@ -154,23 +163,27 @@ export class TreemapCanvas {
     this._resizeObserver.observe(this.container);
   }
 
+  // update：方法用途註解，處理此元件或類別的一段行為。
   update(stocks) {
     this.stocks = Array.isArray(stocks) ? stocks : [];
     this._computeLayout();
     this.render();
   }
 
+  // setColorMetric：方法用途註解，處理此元件或類別的一段行為。
   setColorMetric(metric) {
     this.colorMetric = metric;
     this.render();
   }
 
+  // setSizeMetric：方法用途註解，處理此元件或類別的一段行為。
   setSizeMetric(metric) {
     this.sizeMetric = metric;
     this._computeLayout();
     this.render();
   }
 
+  // setGroupMode：方法用途註解，處理此元件或類別的一段行為。
   setGroupMode(mode) {
     this.groupMode = mode || 'sector';
     this.zoomedSector = null;
@@ -178,17 +191,20 @@ export class TreemapCanvas {
     this.render();
   }
 
+  // setSearchQuery：方法用途註解，處理此元件或類別的一段行為。
   setSearchQuery(query) {
     this.searchQuery = String(query || '').trim().toUpperCase();
     this.render();
   }
 
+  // zoomSector：方法用途註解，處理此元件或類別的一段行為。
   zoomSector(sectorName) {
     this.zoomedSector = sectorName || null;
     this._computeLayout();
     this.render();
   }
 
+  // _resolveSizeValue：方法用途註解，處理此元件或類別的一段行為。
   _resolveSizeValue(stock) {
     if (this.groupMode === 'sector' || this.groupMode === 'weighted' || this.groupMode === 'weighted2') {
       const weight = Number(stock.taiexWeightPct);
@@ -208,6 +224,7 @@ export class TreemapCanvas {
     return this.sizeMetric === 'volume' ? Math.max(volume, 1) : Math.max(marketCap, 1);
   }
 
+  // _resolveYahooSector：方法用途註解，處理此元件或類別的一段行為。
   _resolveYahooSector(stock) {
     const yahoo = String(stock.yahooSector || '').trim();
     if (yahoo) return yahoo;
@@ -236,6 +253,7 @@ export class TreemapCanvas {
     return '其他';
   }
 
+  // _classifyMajorBySector：方法用途註解，處理此元件或類別的一段行為。
   _classifyMajorBySector(stock) {
     const sector = String(stock.sector || stock.taiexSector || '');
     if (sector.includes('金融')) return '金融';
@@ -245,6 +263,7 @@ export class TreemapCanvas {
     return '其他';
   }
 
+  // _resolveTw50Major：方法用途註解，處理此元件或類別的一段行為。
   _resolveTw50Major(stock) {
     const explicit = stock.tw50Major;
     if (explicit && TW50_MAJOR_GROUP_ORDER.includes(explicit)) return explicit;
@@ -252,12 +271,14 @@ export class TreemapCanvas {
     return major === '電子' || major === '金融' ? major : '傳產';
   }
 
+  // _resolveMid100Major：方法用途註解，處理此元件或類別的一段行為。
   _resolveMid100Major(stock) {
     const explicit = stock.mid100Major;
     if (explicit && MID100_MAJOR_GROUP_ORDER.includes(explicit)) return explicit;
     return this._classifyMajorBySector(stock);
   }
 
+  // _mid100Universe：方法用途註解，處理此元件或類別的一段行為。
   _mid100Universe(items) {
     const explicit = items
       .filter((stock) => Number(stock.mid100WeightPct) > 0 || stock.isInMid100 === true)
@@ -269,20 +290,25 @@ export class TreemapCanvas {
       .slice(0, 100);
   }
 
+  // _normalizeWeightedSector：方法用途註解，處理此元件或類別的一段行為。
   _normalizeWeightedSector(stock, primarySectors = TAIEX_PRIMARY_SECTORS) {
     const sector = String(stock.taiexSector || '');
     return primarySectors.includes(sector) ? sector : GROUP_LABELS.other;
   }
 
+  // _weightedUniverse：方法用途註解，處理此元件或類別的一段行為。
   _weightedUniverse(items) {
     return items
       .filter((stock) => Number(stock.taiexWeightPct) > 0)
       .sort((a, b) => (Number(b.taiexWeightPct) || 0) - (Number(a.taiexWeightPct) || 0));
   }
 
+  // _computeSectorMetrics：方法用途註解，處理此元件或類別的一段行為。
   _computeSectorMetrics(stocks) {
     if (!stocks.length) return { changePct: 0, change5d: 0, volRatio: 1 };
+    // weightedSum：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const weightedSum = (key) => {
+      // totalWeight：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const totalWeight = stocks.reduce((sum, s) => sum + (Number(s.taiexWeightPct) || 0), 0);
       if (totalWeight <= 0) return 0;
       return stocks.reduce((sum, s) => sum + (Number(s[key]) || 0) * (Number(s.taiexWeightPct) || 0), 0) / totalWeight;
@@ -295,10 +321,16 @@ export class TreemapCanvas {
     return { changePct, change5d, volRatio };
   }
 
+  // _buildSectorOnlyGroups：方法用途註解，處理此元件或類別的一段行為。
   _buildSectorOnlyGroups(items) {
+    // 「類股」模式不再拆個股，直接把每個類股當成最小 tile；
+    // tile 面積使用期交所公告的產業權重，漲跌則用該產業成分加權平均。
     const weighted = this._weightedUniverse(items);
+    // sectorOrder：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const sectorOrder = TAIEX_SECTOR_WEIGHTS.map((row) => row.name);
+    // sectorWeightMap：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const sectorWeightMap = new Map(TAIEX_SECTOR_WEIGHTS.map((row) => [row.name, Number(row.weightPct) || 0]));
+    // grouped：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const grouped = new Map(sectorOrder.map((name) => [name, []]));
 
     weighted.forEach((stock) => {
@@ -339,6 +371,7 @@ export class TreemapCanvas {
       .filter(Boolean);
   }
 
+  // _buildWeightedGroups：方法用途註解，處理此元件或類別的一段行為。
   _buildWeightedGroups(items, options = {}) {
     const {
       primarySectors = TAIEX_PRIMARY_SECTORS,
@@ -351,9 +384,13 @@ export class TreemapCanvas {
     const weighted = this._weightedUniverse(items);
     if (!weighted.length) return [];
 
+    // 加權/加權2 會先建立「產業 -> 成分股」對照。
+    // 低於門檻的成分股合併成 REST，讓版面保持可讀又維持產業總權重。
+    // sectorWeightMap：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const sectorWeightMap = new Map(TAIEX_SECTOR_WEIGHTS.map((row) => [row.name, Number(row.weightPct) || 0]));
     sectorWeightMap.set(GROUP_LABELS.other, Number(otherSectorWeight) || 0);
 
+    // grouped：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const grouped = new Map(sectorOrder.map((name) => [name, []]));
     weighted.forEach((stock) => {
       const sector = this._normalizeWeightedSector(stock, primarySectors);
@@ -366,7 +403,9 @@ export class TreemapCanvas {
         const allStocks = (grouped.get(sectorName) || []).sort(
           (a, b) => (Number(b.taiexWeightPct) || 0) - (Number(a.taiexWeightPct) || 0)
         );
+        // majorStocks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
         const majorStocks = allStocks.filter((stock) => Number(stock.taiexWeightPct) >= Number(stockThreshold || 0));
+        // majorSum：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
         const majorSum = majorStocks.reduce((sum, stock) => sum + (Number(stock.taiexWeightPct) || 0), 0);
         const configuredWeight = Number(sectorWeightMap.get(sectorName) || 0);
         const sectorWeight = Math.max(configuredWeight, majorSum);
@@ -393,6 +432,7 @@ export class TreemapCanvas {
       .filter((group) => group.stocks.length);
   }
 
+  // _buildYahooSectorGroups：方法用途註解，處理此元件或類別的一段行為。
   _buildYahooSectorGroups(items) {
     const weighted = items
       .filter((stock) => Number(stock.taiexWeightPct) > 0)
@@ -414,14 +454,19 @@ export class TreemapCanvas {
       }));
   }
 
+  // _groupStocks：方法用途註解，處理此元件或類別的一段行為。
   _groupStocks() {
+    // 所有控制列的「分組」最後都會在這裡轉成 layoutWithGroups 可吃的資料格式。
+    // 後續 Canvas 不需要知道資料原本來自台灣50、中型100或加權權重表。
     const allowSynthetic =
       this.groupMode === 'sector' ||
       this.groupMode === 'weighted' ||
       this.groupMode === 'weighted2' ||
       this.groupMode === 'tw50' ||
       this.groupMode === 'mid100';
+    // scoped：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const scoped = this.stocks.filter((stock) => allowSynthetic || !stock.syntheticConstituentOnly);
+    // withSize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const withSize = scoped.map((stock) => ({
       ...stock,
       value: this._resolveSizeValue(stock)
@@ -440,8 +485,10 @@ export class TreemapCanvas {
     }
 
     if (this.groupMode === 'tw50') {
+      // tw50：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const tw50 = withSize.filter((stock) => Number(stock.tw50WeightPct) > 0);
       if (!tw50.length) return [];
+      // grouped：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const grouped = new Map(TW50_MAJOR_GROUP_ORDER.map((name) => [name, []]));
       tw50.forEach((stock) => {
         const major = this._resolveTw50Major(stock);
@@ -462,6 +509,7 @@ export class TreemapCanvas {
     if (this.groupMode === 'mid100') {
       const mid100 = this._mid100Universe(withSize);
       if (!mid100.length) return [];
+      // grouped：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const grouped = new Map(MID100_MAJOR_GROUP_ORDER.map((name) => [name, []]));
       mid100.forEach((stock) => {
         const major = this._resolveMid100Major(stock);
@@ -482,7 +530,10 @@ export class TreemapCanvas {
     return [];
   }
 
+  // _computeLayout：方法用途註解，處理此元件或類別的一段行為。
   _computeLayout() {
+    // 版面計算只在尺寸、群組、大小指標或縮放 sector 改變時重跑；
+    // 顏色切換只需要 render，不需要重新 squarify。
     const W = this.canvas.offsetWidth;
     const H = this.canvas.offsetHeight;
     if (!W || !H || !this.stocks.length) {
@@ -491,11 +542,15 @@ export class TreemapCanvas {
     }
 
     const grouped = this._groupStocks();
+    // filtered：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const filtered = this.zoomedSector ? grouped.filter((sector) => sector.name === this.zoomedSector) : grouped;
     this.layout = layoutWithGroups(filtered, W, H, 2, 1);
   }
 
+  // render：方法用途註解，處理此元件或類別的一段行為。
   render() {
+    // 每次重繪都根據 devicePixelRatio 重設 backing store，
+    // 確保高 DPI 螢幕上的文字與邊線不會模糊。
     const dpr = window.devicePixelRatio || 1;
     const W = this.canvas.offsetWidth;
     const H = this.canvas.offsetHeight;
@@ -503,8 +558,10 @@ export class TreemapCanvas {
 
     this.canvas.width = Math.floor(W * dpr);
     this.canvas.height = Math.floor(H * dpr);
+    // 段落說明：取得 Canvas 2D context 進行繪圖。
     const ctx = this.canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 段落說明：清除上一輪 Canvas 繪圖內容。
     ctx.clearRect(0, 0, W, H);
 
     if (!this.layout.length) return;
@@ -517,6 +574,7 @@ export class TreemapCanvas {
     this._drawColorLegend(ctx, W, H);
   }
 
+  // _drawSectorHeader：方法用途註解，處理此元件或類別的一段行為。
   _drawSectorHeader(ctx, sector) {
     const { x, y, w, h } = sector.sectorRect;
     if (w <= 0 || h <= 0) return;
@@ -537,6 +595,7 @@ export class TreemapCanvas {
     ctx.fillStyle = 'rgba(255,255,255,0.05)';
     ctx.fillRect(x, y, w, headerH);
 
+    // 段落說明：保存 Canvas 狀態，避免局部樣式影響後續繪圖。
     ctx.save();
     ctx.beginPath();
     ctx.rect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, headerH - 2));
@@ -546,6 +605,7 @@ export class TreemapCanvas {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#f5c842';
     ctx.fillText(sector.sectorName, x + 2, y + headerH / 2);
+    // 段落說明：還原 Canvas 狀態。
     ctx.restore();
 
     const avg = computeSectorAvg(sector.stocks);
@@ -556,7 +616,10 @@ export class TreemapCanvas {
     if (w >= 64) ctx.fillText(avgStr, x + w - 4, y + headerH / 2);
   }
 
+  // _drawStockTile：方法用途註解，處理此元件或類別的一段行為。
   _drawStockTile(ctx, stock) {
+    // 一個 tile 會同時負責背景熱度、邊框、搜尋高亮與文字裁切；
+    // 文字大小跟 tile 面積連動，避免小格子硬塞文字造成重疊。
     const { x, y, w, h } = stock.rect;
     if (w < 2 || h < 2) return;
 
@@ -569,7 +632,9 @@ export class TreemapCanvas {
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
     if (stock.isSectorAggregate) {
+      // 類股模式的 stock 其實是合成的 sector tile，只顯示類股名稱與平均漲跌。
       if (w > 34 && h > 22) {
+        // 段落說明：保存 Canvas 狀態，避免局部樣式影響後續繪圖。
         ctx.save();
         ctx.beginPath();
         ctx.rect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
@@ -594,6 +659,7 @@ export class TreemapCanvas {
           this._fitCenterText(ctx, pctText, centerX, centerY + pctFont * 0.95, w - 10);
         }
 
+        // 段落說明：還原 Canvas 狀態。
         ctx.restore();
       }
       return;
@@ -607,6 +673,7 @@ export class TreemapCanvas {
 
     if (w <= 24 || h <= 16) return;
 
+    // 段落說明：保存 Canvas 狀態，避免局部樣式影響後續繪圖。
     ctx.save();
     ctx.rect(x + 1, y + 1, w - 2, h - 2);
     ctx.clip();
@@ -618,6 +685,8 @@ export class TreemapCanvas {
     const pctText = this._formatChangePct(stock);
 
     if (this._isNameFirstLabelMode() && !stock.isWeightedRemainder && w >= 54 && h >= 34) {
+      // 加權/台灣50/中型100 優先顯示「名稱、代號、漲跌」三行，
+      // 讓大權重個股接近 Finviz 的閱讀方式。
       const nameFont = this._clamp(Math.floor(minSide * 0.14), 8, 18);
       const codeFont = this._clamp(Math.floor(minSide * 0.21), 10, 26);
       const pctFont = this._clamp(Math.floor(codeFont * 0.62), 8, 15);
@@ -640,6 +709,7 @@ export class TreemapCanvas {
         this._fitCenterText(ctx, pctText, centerX, pctY, textMaxW);
       }
 
+      // 段落說明：還原 Canvas 狀態。
       ctx.restore();
       return;
     }
@@ -656,9 +726,11 @@ export class TreemapCanvas {
       this._fitCenterText(ctx, pctText, centerX, y + h * 0.68, Math.max(w - 8, 0));
     }
 
+    // 段落說明：還原 Canvas 狀態。
     ctx.restore();
   }
 
+  // _isNameFirstLabelMode：方法用途註解，處理此元件或類別的一段行為。
   _isNameFirstLabelMode() {
     return (
       this.groupMode === 'sector' ||
@@ -669,11 +741,13 @@ export class TreemapCanvas {
     );
   }
 
+  // _formatChangePct：方法用途註解，處理此元件或類別的一段行為。
   _formatChangePct(stock) {
     const pct = Number(stock.changePct) || 0;
     return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
   }
 
+  // _fitCenterText：方法用途註解，處理此元件或類別的一段行為。
   _fitCenterText(ctx, text, x, y, maxWidth) {
     const value = String(text || '').trim();
     if (!value || maxWidth <= 0) return;
@@ -683,10 +757,12 @@ export class TreemapCanvas {
     ctx.fillText(clipped.length < value.length ? `${clipped}...` : clipped, x, y);
   }
 
+  // _clamp：方法用途註解，處理此元件或類別的一段行為。
   _clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
 
+  // _drawHoverHighlight：方法用途註解，處理此元件或類別的一段行為。
   _drawHoverHighlight(ctx, stock) {
     const { x, y, w, h } = stock.rect;
     ctx.strokeStyle = '#ffffff';
@@ -694,7 +770,9 @@ export class TreemapCanvas {
     ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   }
 
+  // _drawColorLegend：方法用途註解，處理此元件或類別的一段行為。
   _drawColorLegend(ctx, W, H) {
+    // 色帶固定在右下角，對應台股慣例：紅漲、綠跌。
     const legendW = 200;
     const legendH = 12;
     const legendX = W - legendW - 12;
@@ -728,6 +806,7 @@ export class TreemapCanvas {
     });
   }
 
+  // _resolveColorMetric：方法用途註解，處理此元件或類別的一段行為。
   _resolveColorMetric(stock) {
     if (this.colorMetric === 'volRatio') {
       const ratio = Number(stock.volRatio) || 1;
@@ -736,6 +815,7 @@ export class TreemapCanvas {
     return Number(stock[this.colorMetric]) || 0;
   }
 
+  // _getHeatColor：方法用途註解，處理此元件或類別的一段行為。
   _getHeatColor(changePct) {
     if (changePct > 5) return '#8b0000';
     if (changePct > 3) return '#c0392b';
@@ -748,12 +828,14 @@ export class TreemapCanvas {
     return '#00a86b';
   }
 
+  // _isSearchHit：方法用途註解，處理此元件或類別的一段行為。
   _isSearchHit(stock) {
     const code = String(stock.code || '').toUpperCase();
     const name = String(stock.name || '').toUpperCase();
     return code.includes(this.searchQuery) || name.includes(this.searchQuery);
   }
 
+  // _handleMouseMove：方法用途註解，處理此元件或類別的一段行為。
   _handleMouseMove(e) {
     const pos = this._getCanvasPos(e);
     const hit = this._hitStock(pos);
@@ -766,13 +848,17 @@ export class TreemapCanvas {
     }
   }
 
+  // _handleMouseLeave：方法用途註解，處理此元件或類別的一段行為。
   _handleMouseLeave() {
     this.hoveredStock = null;
     this.render();
     this._onHover(null, null);
   }
 
+  // _handleClick：方法用途註解，處理此元件或類別的一段行為。
   _handleClick(e) {
+    // 點到個股開 detail；點到 sector 空白處則切換 sector zoom。
+    // 類股模式因 tile 是合成類股，不開個股 detail。
     const pos = this._getCanvasPos(e);
     const hitStock = this._hitStock(pos);
     if (hitStock) return this._onClick(hitStock);
@@ -784,11 +870,13 @@ export class TreemapCanvas {
     this._onSectorClick(nextSector);
   }
 
+  // _getCanvasPos：方法用途註解，處理此元件或類別的一段行為。
   _getCanvasPos(e) {
     const rect = this.canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  // _hitStock：方法用途註解，處理此元件或類別的一段行為。
   _hitStock({ x, y }) {
     if (this.groupMode === 'sector') return null;
     for (const sector of this.layout) {
@@ -800,6 +888,7 @@ export class TreemapCanvas {
     return null;
   }
 
+  // _hitSector：方法用途註解，處理此元件或類別的一段行為。
   _hitSector({ x, y }) {
     for (const sector of this.layout) {
       const r = sector.sectorRect;
@@ -808,15 +897,20 @@ export class TreemapCanvas {
     return null;
   }
 
+  // _onHover：方法用途註解，處理此元件或類別的一段行為。
   _onHover(stock, event) {}
+  // _onClick：方法用途註解，處理此元件或類別的一段行為。
   _onClick(stock) {}
+  // _onSectorClick：方法用途註解，處理此元件或類別的一段行為。
   _onSectorClick(sectorName) {}
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
     this._resizeObserver.disconnect();
     this.canvas.removeEventListener('mousemove', this._onMouseMove);
     this.canvas.removeEventListener('mouseleave', this._onMouseLeave);
     this.canvas.removeEventListener('click', this._onClick);
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.canvas.remove();
   }
 }

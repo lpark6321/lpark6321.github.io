@@ -1,40 +1,49 @@
+// 模擬行情服務：定期更新 store 內的大盤、期貨、股票與市場地圖資料。
 import { store } from '../data/store.js';
 import { TW_STOCK_UNIVERSE } from '../data/twStocks.js';
 import { TW50_BY_CODE } from '../data/tw50Constituents.js';
 import { MID100_BY_CODE } from '../data/twMid100Constituents.js';
 import { TAIEX_BY_CODE } from '../data/taiexWeightedConstituents.js';
 import { getMarketStatus } from './marketCalendar.js';
+import { hasFreshYahooTaiex } from './yahooTaiexPoller.js';
+import { getDashboardDataSource } from './dashboardDataSource.js';
 
 let tickTimer = null;
 let globalTimer = null;
 let marketMapTimer = null;
 let marketMapState = null;
 
+// rand：函式用途註解，說明此處封裝一段可重用的流程。
 function rand(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+// drift：函式用途註解，說明此處封裝一段可重用的流程。
 function drift(value, pct = 0.003) {
   const next = value * (1 + rand(-pct, pct));
   return +next.toFixed(2);
 }
 
+// pushSpark：函式用途註解，說明此處封裝一段可重用的流程。
 function pushSpark(arr, value, maxLen = 60) {
   const next = [...arr, value];
   if (next.length > maxLen) next.shift();
   return next;
 }
 
+// clamp：函式用途註解，說明此處封裝一段可重用的流程。
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+// hashCode：函式用途註解，說明此處封裝一段可重用的流程。
 function hashCode(code) {
   return String(code)
     .split('')
     .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
 }
 
+// intradayBias：函式用途註解，說明此處封裝一段可重用的流程。
 function intradayBias() {
   const now = new Date();
   const minute = now.getHours() * 60 + now.getMinutes();
@@ -44,7 +53,9 @@ function intradayBias() {
   return Math.sin((progress - 0.25) * Math.PI) * 0.5;
 }
 
+// buildMarketMapUniverse：函式用途註解，說明此處封裝一段可重用的流程。
 function buildMarketMapUniverse() {
+  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
 
   Object.values(TW50_BY_CODE).forEach((item) => {
@@ -131,6 +142,7 @@ function buildMarketMapUniverse() {
   return [...map.values()];
 }
 
+// buildInitialMarketMap：函式用途註解，說明此處封裝一段可重用的流程。
 function buildInitialMarketMap() {
   return buildMarketMapUniverse().map((stock) => {
     const seed = hashCode(stock.code);
@@ -147,8 +159,13 @@ function buildInitialMarketMap() {
   });
 }
 
+// updateTopStocks：函式用途註解，說明此處封裝一段可重用的流程。
 function updateTopStocks() {
-  const stocks = store.get('topStocks').map((s) => {
+  if (getDashboardDataSource() !== 'mock') return;
+  const current = store.get('topStocks');
+  if (current.some((stock) => stock.source === 'yahoo' && Number.isFinite(stock.sourceUpdatedAt) && Date.now() - stock.sourceUpdatedAt < 60000)) return;
+  // stocks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const stocks = current.map((s) => {
     const price = drift(s.price, 0.006);
     const change = +(price - (s.price - s.change)).toFixed(2);
     const changePct = +((change / (s.price - s.change)) * 100).toFixed(2);
@@ -163,8 +180,11 @@ function updateTopStocks() {
   store.set('topStocks', stocks);
 }
 
+// updateTaiex：函式用途註解，說明此處封裝一段可重用的流程。
 function updateTaiex() {
+  if (getDashboardDataSource() !== 'mock') return;
   const taiex = store.get('taiex');
+  if (hasFreshYahooTaiex(taiex)) return;
   const nextPrice = drift(taiex.price, 0.0015);
   const change = +(nextPrice - taiex.open).toFixed(2);
   const changePct = +((change / taiex.open) * 100).toFixed(2);
@@ -179,6 +199,7 @@ function updateTaiex() {
   });
 }
 
+// updateAlerts：函式用途註解，說明此處封裝一段可重用的流程。
 function updateAlerts() {
   const alerts = store.get('patternAlerts');
   if (Math.random() < 0.35) {
@@ -201,8 +222,10 @@ function updateAlerts() {
   }
 }
 
+// startPriceSimulator：函式用途註解，說明此處封裝一段可重用的流程。
 export function startPriceSimulator() {
   if (tickTimer) return;
+  // 段落說明：建立定時更新流程。
   tickTimer = setInterval(() => {
     updateTaiex();
     updateTopStocks();
@@ -210,16 +233,21 @@ export function startPriceSimulator() {
   }, 2500);
 }
 
+// stopPriceSimulator：函式用途註解，說明此處封裝一段可重用的流程。
 export function stopPriceSimulator() {
   if (!tickTimer) return;
+  // 段落說明：清除定時器，避免頁面卸載後繼續執行。
   clearInterval(tickTimer);
   tickTimer = null;
 }
 
+// simulateGlobalIndices：函式用途註解，說明此處封裝一段可重用的流程。
 export function simulateGlobalIndices() {
   if (globalTimer) return;
+  // 段落說明：建立定時更新流程。
   globalTimer = setInterval(() => {
     const now = new Date();
+    // data：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const data = store.get('globalIndices').map((idx) => {
       const status = getMarketStatus(idx.id, now);
       const base = idx.prevClose;
@@ -243,25 +271,33 @@ export function simulateGlobalIndices() {
   }, 3000);
 }
 
+// stopGlobalSimulator：函式用途註解，說明此處封裝一段可重用的流程。
 export function stopGlobalSimulator() {
   if (!globalTimer) return;
+  // 段落說明：清除定時器，避免頁面卸載後繼續執行。
   clearInterval(globalTimer);
   globalTimer = null;
 }
 
+// simulateMarketMap：函式用途註解，說明此處封裝一段可重用的流程。
 export function simulateMarketMap() {
   if (marketMapTimer) return;
 
   const sectorTrends = {};
+  // sectors：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const sectors = [...new Set(buildMarketMapUniverse().map((stock) => stock.taiexSector || stock.sector).filter(Boolean))];
   sectors.forEach((sector) => {
     sectorTrends[sector] = (Math.random() - 0.5) * 2;
   });
 
-  marketMapState = buildInitialMarketMap();
-  store.set('marketMap', marketMapState);
+  if (getDashboardDataSource() === 'mock') {
+    marketMapState = buildInitialMarketMap();
+    store.set('marketMap', marketMapState);
+  }
 
+  // 段落說明：建立定時更新流程。
   marketMapTimer = setInterval(() => {
+    if (getDashboardDataSource() !== 'mock') return;
     if (!marketMapState || !marketMapState.length) {
       marketMapState = buildInitialMarketMap();
     }
@@ -304,8 +340,10 @@ export function simulateMarketMap() {
   }, 5000);
 }
 
+// stopMarketMapSimulator：函式用途註解，說明此處封裝一段可重用的流程。
 export function stopMarketMapSimulator() {
   if (!marketMapTimer) return;
+  // 段落說明：清除定時器，避免頁面卸載後繼續執行。
   clearInterval(marketMapTimer);
   marketMapTimer = null;
   marketMapState = null;

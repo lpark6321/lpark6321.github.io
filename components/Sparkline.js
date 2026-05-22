@@ -1,22 +1,30 @@
-﻿export class Sparkline {
+// Sparkline 元件：呈現小型走勢線。
+export class Sparkline {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
     this.options = { color: options.color || 'var(--red)', fill: true, width: options.width || 180, height: options.height || 56 };
+    // 段落說明：建立新的 DOM 節點。
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'sparkline__canvas';
     this.canvas.width = this.options.width;
     this.canvas.height = this.options.height;
+    // 段落說明：取得 Canvas 2D context 進行繪圖。
     this.ctx = this.canvas.getContext('2d');
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.canvas);
   }
 
+  // update：方法用途註解，處理此元件或類別的一段行為。
   update(data = [], baseline = null) {
     const { width, height, color, fill } = this.options;
     const ctx = this.ctx;
+    // 段落說明：清除上一輪 Canvas 繪圖內容。
     ctx.clearRect(0, 0, width, height);
     if (!data.length) return;
     const min = Math.min(...data);
     const max = Math.max(...data);
     const range = max - min || 1;
+    // points：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const points = data.map((v, i) => ({
       x: (i / (data.length - 1 || 1)) * (width - 4) + 2,
       y: height - 2 - ((v - min) / range) * (height - 4)
@@ -51,7 +59,9 @@
     ctx.stroke();
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.canvas.remove();
   }
 }

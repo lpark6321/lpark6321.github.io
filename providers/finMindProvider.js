@@ -1,5 +1,7 @@
+// FinMind 資料提供者：取得台股行情並轉成專案共用資料結構。
 import { BaseMarketDataProvider } from './baseProvider.js';
 
+// formatDate：函式用途註解，說明此處封裝一段可重用的流程。
 function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -7,13 +9,16 @@ function formatDate(date) {
   return `${y}-${m}-${d}`;
 }
 
+// shiftDays：函式用途註解，說明此處封裝一段可重用的流程。
 function shiftDays(base, offset) {
   const copy = new Date(base);
   copy.setDate(copy.getDate() + offset);
   return copy;
 }
 
+// FinMindProvider：類別用途註解，集中管理相關狀態與方法。
 export class FinMindProvider extends BaseMarketDataProvider {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(options) {
     super({
       type: 'finmind',
@@ -26,6 +31,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
     this.token = options.token || '';
   }
 
+  // buildHeaders：方法用途註解，處理此元件或類別的一段行為。
   buildHeaders() {
     if (!this.token) return { Accept: 'application/json' };
     return {
@@ -34,6 +40,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
     };
   }
 
+  // requestDataset：方法用途註解，處理此元件或類別的一段行為。
   async requestDataset(params) {
     const url = new URL(this.apiUrl);
     Object.entries(params).forEach(([key, value]) => {
@@ -42,6 +49,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
       }
     });
 
+    // 段落說明：呼叫外部資料來源並等待回應。
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: this.buildHeaders()
@@ -58,6 +66,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
     return payload.data;
   }
 
+  // buildTaiexRecord：方法用途註解，處理此元件或類別的一段行為。
   async buildTaiexRecord(today, startDate) {
     const [taiexSeries, taiexDaily] = await Promise.all([
       this.requestDataset({
@@ -95,15 +104,20 @@ export class FinMindProvider extends BaseMarketDataProvider {
     };
   }
 
+  // buildFutureRecord：方法用途註解，處理此元件或類別的一段行為。
   async buildFutureRecord() {
+    // quote：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const quote = this.quotes.find((item) => item.symbol === 'TXF=F');
     return this.createFallbackRecord(quote, {
       note: 'FinMind futures mapping is prepared but not enabled until the exact futures dataset is confirmed'
     });
   }
 
+  // buildStockRecords：方法用途註解，處理此元件或類別的一段行為。
   async buildStockRecords(today, startDate) {
+    // stockQuotes：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const stockQuotes = this.quotes.filter((item) => item.symbol.endsWith('.TW'));
+    // rows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const rows = await Promise.all(stockQuotes.map(async (quote) => {
       const stockId = quote.symbol.replace('.TW', '');
       const series = await this.requestDataset({
@@ -144,6 +158,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
     return map;
   }
 
+  // requestRemoteData：方法用途註解，處理此元件或類別的一段行為。
   async requestRemoteData() {
     const now = new Date();
     const today = formatDate(now);
@@ -160,6 +175,7 @@ export class FinMindProvider extends BaseMarketDataProvider {
     return this.mergeRecords(stockMap);
   }
 
+  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
   async fetchQuotes(options = {}) {
     return this.withCache(options, () => this.requestRemoteData());
   }

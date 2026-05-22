@@ -1,9 +1,13 @@
-﻿// Pie Chart showing sector market cap distribution (full-screen version)
+// 圓餅圖元件：用於呈現類股或群組比例分布。
+// Pie Chart showing sector market cap distribution (full-screen version)
 export class PieChart {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container) {
     this.container = container
+    // 段落說明：建立新的 DOM 節點。
     this.canvas = document.createElement('canvas')
     this.canvas.style.cssText = 'display:block;width:100%;height:100%'
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.canvas)
 
     this.stocks = []
@@ -27,6 +31,7 @@ export class PieChart {
     this._bindEvents()
   }
 
+  // update：方法用途註解，處理此元件或類別的一段行為。
   update(stocks) {
     if (!stocks || stocks.length === 0) {
       this.stocks = []
@@ -36,9 +41,11 @@ export class PieChart {
     this.render()
   }
 
+  // render：方法用途註解，處理此元件或類別的一段行為。
   render() {
     if (!this.canvas || !this.canvas.getContext) return
     
+    // 段落說明：取得 Canvas 2D context 進行繪圖。
     const ctx = this.canvas.getContext('2d')
     if (!ctx) return
     
@@ -58,6 +65,7 @@ export class PieChart {
       }
     }
     
+    // 段落說明：清除上一輪 Canvas 繪圖內容。
     ctx.clearRect(0, 0, W, H)
     
     // Compute sector totals
@@ -75,6 +83,7 @@ export class PieChart {
     const sectors = Array.from(sectorMap.values())
       .sort((a, b) => b.value - a.value)
     
+    // totalValue：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const totalValue = sectors.reduce((sum, s) => sum + s.value, 0)
     
     if (totalValue === 0) return
@@ -157,6 +166,7 @@ export class PieChart {
     }
   }
 
+  // _lightenColor：方法用途註解，處理此元件或類別的一段行為。
   _lightenColor(hex) {
     const r = parseInt(hex.slice(1, 3), 16)
     const g = parseInt(hex.slice(3, 5), 16)
@@ -164,7 +174,9 @@ export class PieChart {
     return `rgba(${r}, ${g}, ${b}, 0.8)`
   }
 
+  // _bindEvents：方法用途註解，處理此元件或類別的一段行為。
   _bindEvents() {
+    // 段落說明：綁定使用者互動事件。
     this.canvas.addEventListener('mousemove', e => {
       const rect = this.canvas.getBoundingClientRect()
       const x = e.clientX - rect.left
@@ -189,12 +201,14 @@ export class PieChart {
       }
     })
     
+    // 段落說明：綁定使用者互動事件。
     this.canvas.addEventListener('mouseleave', () => {
       this.hoveredSector = null
       this.render()
     })
   }
 
+  // _updateHovered：方法用途註解，處理此元件或類別的一段行為。
   _updateHovered(angle) {
     const sectorMap = new Map()
     this.stocks.forEach(stock => {
@@ -208,6 +222,7 @@ export class PieChart {
     const sectors = Array.from(sectorMap.values())
       .sort((a, b) => b.value - a.value)
     
+    // totalValue：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const totalValue = sectors.reduce((sum, s) => sum + s.value, 0)
     
     let startAngle = -Math.PI / 2
@@ -226,6 +241,7 @@ export class PieChart {
     }
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
     try {
       if (this.canvas && this.canvas.parentElement) {

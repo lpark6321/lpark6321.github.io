@@ -1,13 +1,19 @@
+// 市場地圖控制列：提供分組、顏色、大小與圖形切換按鈕。
 export class TreemapControls {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, callbacks = {}) {
+    // 段落說明：建立新的 DOM 節點。
     this.el = document.createElement('div');
     this.el.className = 'tm-controls';
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.el);
     this.callbacks = callbacks;
     this._render();
   }
 
+  // _render：方法用途註解，處理此元件或類別的一段行為。
   _render() {
+    // 段落說明：更新 DOM 內容。
     this.el.innerHTML = `
       <div class="tm-ctrl-group">
         <span class="tm-ctrl-label">分組</span>
@@ -36,7 +42,9 @@ export class TreemapControls {
     `;
 
     this.el.querySelectorAll('[data-group]').forEach((btn) => {
+      // 段落說明：綁定使用者互動事件。
       btn.addEventListener('click', () => {
+        // 段落說明：移除 DOM 節點或釋放畫面資源。
         this.el.querySelectorAll('[data-group]').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         this.callbacks.onGroupChange?.(btn.dataset.group);
@@ -44,7 +52,9 @@ export class TreemapControls {
     });
 
     this.el.querySelectorAll('[data-color]').forEach((btn) => {
+      // 段落說明：綁定使用者互動事件。
       btn.addEventListener('click', () => {
+        // 段落說明：移除 DOM 節點或釋放畫面資源。
         this.el.querySelectorAll('[data-color]').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         this.callbacks.onColorChange?.(btn.dataset.color);
@@ -52,7 +62,9 @@ export class TreemapControls {
     });
 
     this.el.querySelectorAll('[data-size]').forEach((btn) => {
+      // 段落說明：綁定使用者互動事件。
       btn.addEventListener('click', () => {
+        // 段落說明：移除 DOM 節點或釋放畫面資源。
         this.el.querySelectorAll('[data-size]').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         this.callbacks.onSizeChange?.(btn.dataset.size);
@@ -60,7 +72,9 @@ export class TreemapControls {
     });
 
     this.el.querySelectorAll('[data-chart]').forEach((btn) => {
+      // 段落說明：綁定使用者互動事件。
       btn.addEventListener('click', () => {
+        // 段落說明：移除 DOM 節點或釋放畫面資源。
         this.el.querySelectorAll('[data-chart]').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         this.callbacks.onChartChange?.(btn.dataset.chart);
@@ -68,7 +82,9 @@ export class TreemapControls {
     });
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.el.remove();
   }
 }

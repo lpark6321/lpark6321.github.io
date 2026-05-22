@@ -1,3 +1,4 @@
+// 市場地圖提示框：滑鼠懸停股票或圖形區塊時顯示詳細資訊。
 function formatVol(vol) {
   const value = Number(vol);
   if (!Number.isFinite(value) || value <= 0) return '—';
@@ -6,8 +7,11 @@ function formatVol(vol) {
   return value.toLocaleString('zh-TW');
 }
 
+// TreemapTooltip：類別用途註解，集中管理相關狀態與方法。
 export class TreemapTooltip {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor() {
+    // 段落說明：建立新的 DOM 節點。
     this.el = document.createElement('div');
     this.el.className = 'tm-tooltip';
     this.el.style.cssText = `
@@ -21,15 +25,18 @@ export class TreemapTooltip {
       min-width: 170px;
       font-family: "JetBrains Mono", monospace;
     `;
+    // 段落說明：將建立好的節點掛回頁面。
     document.body.appendChild(this.el);
   }
 
+  // show：方法用途註解，處理此元件或類別的一段行為。
   show(stock, mouseEvent) {
     const pct = Number(stock.changePct) || 0;
     const pctStr = `${pct >= 0 ? '▲ +' : '▼ '}${pct.toFixed(2)}%`;
     const pctColor = pct >= 0 ? '#f03a5f' : '#1fd67a';
     const price = Number(stock.price);
 
+    // 段落說明：更新 DOM 內容。
     this.el.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:#e8ecf5">${stock.code} ${stock.name}</div>
       <div style="font-size:9px;color:#4a5a7a;margin-bottom:6px">${stock.sector} · ${stock.subSector || '—'}</div>
@@ -57,11 +64,14 @@ export class TreemapTooltip {
     this.el.style.display = 'block';
   }
 
+  // hide：方法用途註解，處理此元件或類別的一段行為。
   hide() {
     this.el.style.display = 'none';
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.el.remove();
   }
 }

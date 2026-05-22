@@ -1,3 +1,4 @@
+// Page6 台股市場地圖：掛載方塊圖/旭日圖控制列、提示框與明細面板。
 import { store } from '../../data/store.js';
 import { TW_STOCK_UNIVERSE } from '../../data/twStocks.js';
 import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
@@ -11,9 +12,12 @@ import { SunburstChart } from '../../components/SunburstChart.js';
 import { simulateMarketMap, stopMarketMapSimulator } from '../../services/priceSimulator.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
 
+// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
+// buildPage6Universe：函式用途註解，說明此處封裝一段可重用的流程。
 function buildPage6Universe() {
+  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
 
   Object.values(TW50_BY_CODE).forEach((item) => {
@@ -108,8 +112,12 @@ function buildPage6Universe() {
 
 const PAGE6_UNIVERSE = buildPage6Universe();
 
+// mergeData：函式用途註解，說明此處封裝一段可重用的流程。
 function mergeData() {
+  // 靜態 universe 負責名稱、分類與權重；store.marketMap 只覆蓋即時價格、漲跌與量。
+  // 這樣 Page6 的版面比例不會因模擬報價缺資料而消失。
   const marketRows = store.get('marketMap') || [];
+  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const map = new Map(marketRows.map((row) => [String(row.code), row]));
 
   return PAGE6_UNIVERSE.map((stock) => {
@@ -131,7 +139,9 @@ function mergeData() {
   });
 }
 
+// mount：函式用途註解，說明此處封裝一段可重用的流程。
 export function mount(container) {
+  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="p6-layout" id="p6-layout">
       <div class="p6-controls" id="p6-ctrl"></div>
@@ -145,6 +155,7 @@ export function mount(container) {
   const mapEl = container.querySelector('#p6-map');
   const detailEl = container.querySelector('#p6-detail');
 
+  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (name, fallback) => {
     const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -160,6 +171,7 @@ export function mount(container) {
 
   const tooltip = new TreemapTooltip();
   const detail = new TreemapDetail(detailEl, {
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     onClose: () => layoutEl.classList.remove('detail-open')
   });
 
@@ -170,6 +182,8 @@ export function mount(container) {
     sizeMetric: 'marketCap'
   };
 
+  // TreemapCanvas 與 SunburstChart 都實作 _onHover，所以 tooltip wiring 共用同一段。
+  // bindHoverCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const bindHoverCallbacks = (chart) => {
     chart._onHover = (stock, event) => {
       if (stock && event) tooltip.show(stock, event);
@@ -177,6 +191,7 @@ export function mount(container) {
     };
   };
 
+  // bindTreemapCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const bindTreemapCallbacks = (treemap) => {
     bindHoverCallbacks(treemap);
 
@@ -191,14 +206,18 @@ export function mount(container) {
     };
   };
 
+  // createChart：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const createChart = (type) => {
+    // 切換方塊圖/旭日圖時先銷毀舊 Canvas，避免 ResizeObserver 和事件監聽殘留。
     if (currentChart && typeof currentChart.destroy === 'function') {
       currentChart.destroy();
     }
 
+    // 段落說明：更新 DOM 內容。
     mapEl.innerHTML = '';
     detail.hide();
     tooltip.hide();
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     layoutEl.classList.remove('detail-open');
 
     if (type === 'sunburst') {
@@ -211,7 +230,9 @@ export function mount(container) {
     bindTreemapCallbacks(currentChart);
   };
 
+  // applyChartState：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const applyChartState = () => {
+    // 控制列狀態獨立保存，換圖形後可以重新套回目前分組、顏色與大小設定。
     currentChart?.setGroupMode?.(chartState.groupMode);
     currentChart?.setColorMetric?.(chartState.colorMetric);
     currentChart?.setSizeMetric?.(chartState.sizeMetric);
@@ -243,6 +264,8 @@ export function mount(container) {
   currentChart.update?.(mergeData());
   simulateMarketMap();
 
+  // unsub：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsub = store.subscribe('marketMap', () => {
     currentChart?.update?.(mergeData());
   });
@@ -257,9 +280,11 @@ export function mount(container) {
     detail.destroy();
   };
 
+  // 段落說明：回傳目前頁面的清理函式。
   return cleanup;
 }
 
+// unmount：函式用途註解，說明此處封裝一段可重用的流程。
 export function unmount() {
   cleanup();
   cleanup = () => {};

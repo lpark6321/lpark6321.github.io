@@ -1,9 +1,14 @@
-﻿import { Sparkline } from './Sparkline.js';
+// 股票卡片元件：呈現單檔股票報價、漲跌與迷你走勢。
+import { Sparkline } from './Sparkline.js';
 
+// StockCard：類別用途註解，集中管理相關狀態與方法。
 export class StockCard {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
+    // 段落說明：建立新的 DOM 節點。
     this.root = document.createElement('article');
     this.root.className = 'panel';
+    // 段落說明：更新 DOM 內容。
     this.root.innerHTML = `
       <div class="panel__body">
         <div class="card-top">
@@ -22,10 +27,12 @@ export class StockCard {
     this.priceEl = this.root.querySelector('.price');
     this.changeEl = this.root.querySelector('.change');
     this.spark = new Sparkline(this.root.querySelector('.spark'), { width: 130, height: 38 });
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.root);
     this.update(options.stock || null);
   }
 
+  // update：方法用途註解，處理此元件或類別的一段行為。
   update(stock) {
     if (!stock) return;
     const up = stock.changePct >= 0;
@@ -39,9 +46,10 @@ export class StockCard {
     this.spark.update(stock.sparkline || []);
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
     this.spark.destroy();
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.root.remove();
   }
 }
-

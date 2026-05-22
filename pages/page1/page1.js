@@ -1,29 +1,46 @@
-﻿import { store } from '../../data/store.js';
+// Page1 期貨總覽：整合台指資訊、主圖分頁、監控區與多功能看板。
+import { store } from '../../data/store.js';
 import { Panel } from '../../components/Panel.js';
 import { Sparkline } from '../../components/Sparkline.js';
 import { StockCard } from '../../components/StockCard.js';
-import { mountMarketChart } from '../../services/marketChart.js';
+import { fetchYahooCandles, mountMarketChart } from '../../services/marketChart.js';
 import { mountTradingViewWidget } from '../../services/tradingview.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
+import {
+  DASHBOARD_DATA_SOURCES,
+  getDashboardDataSource,
+  setDashboardDataSource,
+  subscribeDashboardDataSource
+} from '../../services/dashboardDataSource.js';
 
+// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
 const TOP10_CODES = ['2330', '2308', '2317', '2454', '3711', '2881', '2382', '2412', '2882', '2891'];
 const AMP_GRID = [["最大振幅",2668],["大大振幅",1749],["平均振幅",1282],["小小振幅",970],["最小振幅",677]];
 
+// c：函式用途註解，說明此處封裝一段可重用的流程。
 function c(v) { return v >= 0 ? 'metric-up' : 'metric-down'; }
+// n：函式用途註解，說明此處封裝一段可重用的流程。
 function n(v, d = 2) { return Number(v).toLocaleString('zh-TW', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 
 const PRODUCT_SESSIONS = {
   '台指': { start: '08:45', end: '13:45', ticks: 29 },
   '台指(全)': { start: '15:00', end: '13:45', ticks: 45 }
 };
+const DAY_SESSION_START = 8 * 60 + 45;
+const DAY_SESSION_END = 13 * 60 + 45;
+const AFTER_SESSION_START = 15 * 60;
+const AFTER_SESSION_END = 5 * 60;
 
+// toMinutes：函式用途註解，說明此處封裝一段可重用的流程。
 function toMinutes(label) {
   const [h, m] = label.split(':').map(Number);
   return h * 60 + m;
 }
 
+// formatMinutes：函式用途註解，說明此處封裝一段可重用的流程。
 function formatMinutes(total) {
   const minutes = ((Math.round(total) % 1440) + 1440) % 1440;
   const hh = String(Math.floor(minutes / 60)).padStart(2, '0');
@@ -31,6 +48,7 @@ function formatMinutes(total) {
   return `${hh}:${mm}`;
 }
 
+// buildSessionLabels：函式用途註解，說明此處封裝一段可重用的流程。
 function buildSessionLabels(mode) {
   const session = PRODUCT_SESSIONS[mode] || PRODUCT_SESSIONS['台指'];
   const start = toMinutes(session.start);
@@ -39,6 +57,7 @@ function buildSessionLabels(mode) {
   return Array.from({ length: 6 }, (_, idx) => formatMinutes(start + (span * idx) / 5));
 }
 
+// resolveProductSnapshot：函式用途註解，說明此處封裝一段可重用的流程。
 function resolveProductSnapshot(mode, taiex, futures) {
   if (mode === '台指(全)') {
     const price = futures.price + 153;
@@ -71,6 +90,7 @@ function resolveProductSnapshot(mode, taiex, futures) {
   };
 }
 
+// buildIntradaySeries：函式用途註解，說明此處封裝一段可重用的流程。
 function buildIntradaySeries(mode, snapshot) {
   const session = PRODUCT_SESSIONS[mode] || PRODUCT_SESSIONS['台指'];
   const labels = buildSessionLabels(mode);
@@ -111,14 +131,123 @@ function buildIntradaySeries(mode, snapshot) {
   return { points, labels };
 }
 
+// drawTrend：函式用途註解，說明此處封裝一段可重用的流程。
+function formatTrendTimeLabel(time, timeframe) {
+  if (typeof time === 'string') return time.slice(5);
+  const date = new Date(Number(time) * 1000);
+  if (!Number.isFinite(date.getTime())) return '';
+  const options = timeframe === 'D'
+    ? { month: '2-digit', day: '2-digit', timeZone: 'Asia/Taipei' }
+    : { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Taipei' };
+  return new Intl.DateTimeFormat('zh-TW', options).format(date);
+}
+
+function taipeiTimeParts(time) {
+  if (typeof time === 'string') {
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(time) ? time : time.slice(0, 10);
+    return { dateKey, minute: 0, isDateOnly: true };
+  }
+
+  const date = new Date(Number(time) * 1000);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    minute: Number(parts.hour) * 60 + Number(parts.minute),
+    isDateOnly: false
+  };
+}
+
+function shiftDateKey(dateKey, offsetDays) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + offsetDays));
+  return date.toISOString().slice(0, 10);
+}
+
+function sessionOfCandle(row, timeframe) {
+  const parts = taipeiTimeParts(row.time);
+  if (!parts) return null;
+  if (timeframe === 'D' || parts.isDateOnly) return { type: 'daily', key: parts.dateKey, label: parts.dateKey };
+
+  const minute = parts.minute;
+  if (minute >= DAY_SESSION_START && minute <= DAY_SESSION_END) {
+    return { type: 'day', key: parts.dateKey, label: `${parts.dateKey} 盤中` };
+  }
+  if (minute >= AFTER_SESSION_START) {
+    return { type: 'after', key: parts.dateKey, label: `${parts.dateKey} 盤後` };
+  }
+  if (minute <= AFTER_SESSION_END) {
+    const key = shiftDateKey(parts.dateKey, -1);
+    return { type: 'after', key, label: `${key} 盤後` };
+  }
+  if (minute < DAY_SESSION_START) {
+    const key = shiftDateKey(parts.dateKey, -1);
+    return { type: 'after', key, label: `${key} 盤後` };
+  }
+  return { type: 'day', key: parts.dateKey, label: `${parts.dateKey} 盤中` };
+}
+
+function selectLatestTradingSessionRows(rows, timeframe) {
+  if (!rows.length) return { rows: [], sessionLabel: '' };
+  const tagged = rows
+    .map((row) => ({ row, session: sessionOfCandle(row, timeframe) }))
+    .filter((item) => item.session);
+  const latest = tagged.at(-1);
+  if (!latest) return { rows: [], sessionLabel: '' };
+  const selected = tagged
+    .filter((item) => item.session.type === latest.session.type && item.session.key === latest.session.key)
+    .map((item) => item.row);
+  return { rows: selected, sessionLabel: latest.session.label };
+}
+
+function buildChartTrendSeries(candles, timeframe) {
+  const rows = Array.isArray(candles) ? candles.filter((row) => Number.isFinite(Number(row.close))) : [];
+  const { rows: source, sessionLabel } = selectLatestTradingSessionRows(rows, timeframe);
+  if (!source.length) return null;
+
+  let cumValue = 0;
+  let cumVolume = 0;
+  const points = source.map((row) => {
+    const price = Number(row.close);
+    const volume = Math.max(0, Number(row.volume) || 0);
+    const weightedVolume = volume || 1;
+    cumValue += price * weightedVolume;
+    cumVolume += weightedVolume;
+    return {
+      price,
+      avg: cumVolume ? cumValue / cumVolume : price,
+      volume: weightedVolume
+    };
+  });
+
+  const labelCount = Math.min(6, source.length);
+  const labels = Array.from({ length: labelCount }, (_, idx) => {
+    const sourceIndex = labelCount === 1 ? source.length - 1 : Math.round((idx / (labelCount - 1)) * (source.length - 1));
+    return formatTrendTimeLabel(source[sourceIndex]?.time, timeframe);
+  });
+
+  return { points, labels, sourceRows: source, sessionLabel };
+}
+
 function drawTrend(canvas, data, meta = {}) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const w = canvas.width = Math.max(520, Math.floor(canvas.clientWidth));
   const h = canvas.height = Math.max(320, Math.floor(canvas.clientHeight));
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
   if (!data?.points?.length) return;
 
   const { points, labels } = data;
+  // priceValues：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const priceValues = points.flatMap((point) => [point.price, point.avg]);
   const min = Math.min(...priceValues, meta.low ?? priceValues[0]);
   const max = Math.max(...priceValues, meta.high ?? priceValues[0]);
@@ -132,9 +261,13 @@ function drawTrend(canvas, data, meta = {}) {
   const priceHeight = h - top - bottom - volumeGap - volumeHeight;
   const volumeTop = top + priceHeight + volumeGap;
   const pw = w - left - right;
+  // x：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const x = (i) => left + (i / (points.length - 1 || 1)) * pw;
+  // y：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const y = (v) => top + (1 - (v - min) / range) * priceHeight;
+  // maxVolume：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const maxVolume = Math.max(...points.map((point) => point.volume), 1);
+  // yVolume：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const yVolume = (v) => volumeTop + volumeHeight - (v / maxVolume) * volumeHeight;
 
   ctx.fillStyle = '#10151f';
@@ -220,11 +353,14 @@ function drawTrend(canvas, data, meta = {}) {
   ctx.fill();
 }
 
+// drawInfoCandle：函式用途註解，說明此處封裝一段可重用的流程。
 function drawInfoCandle(canvas, payload) {
   if (!canvas) return;
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const w = canvas.width = Math.max(90, Math.floor(canvas.clientWidth || 90));
   const h = canvas.height = Math.max(130, Math.floor(canvas.clientHeight || 130));
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
 
   ctx.fillStyle = '#1b1d22';
@@ -239,6 +375,7 @@ function drawInfoCandle(canvas, payload) {
   const yMax = Math.max(payload.high, payload.open, payload.close);
   const yMin = Math.min(payload.low, payload.open, payload.close);
   const range = yMax - yMin || 1;
+  // y：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const y = (v) => top + (1 - (v - yMin) / range) * (h - top - bottom);
 
   const cx = (w - left - right) / 2 + left;
@@ -272,10 +409,13 @@ function drawInfoCandle(canvas, payload) {
   ctx.fillText(ampText, w - 8, h - 8);
 }
 
+// drawMonitor：函式用途註解，說明此處封裝一段可重用的流程。
 function drawMonitor(canvas, rows) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const w = canvas.width = Math.max(360, Math.floor(canvas.clientWidth));
   const h = canvas.height = Math.max(280, Math.floor(canvas.clientHeight));
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
 
   const left = 44;
@@ -284,6 +424,7 @@ function drawMonitor(canvas, rows) {
   const bottom = 90;
   const pw = w - left - right;
   const ph = h - top - bottom;
+  // y：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const y = (pct) => top + (1 - (pct + 10) / 20) * ph;
   const labelTop = h - bottom + 18;
   const nameStart = labelTop + 16;
@@ -342,10 +483,13 @@ function drawMonitor(canvas, rows) {
   });
 }
 
+// drawAmp20：函式用途註解，說明此處封裝一段可重用的流程。
 function drawAmp20(canvas, hist) {
+  // 段落說明：取得 Canvas 2D context 進行繪圖。
   const ctx = canvas.getContext('2d');
   const w = canvas.width = Math.max(560, Math.floor(canvas.clientWidth));
   const h = canvas.height = Math.max(260, Math.floor(canvas.clientHeight));
+  // 段落說明：清除上一輪 Canvas 繪圖內容。
   ctx.clearRect(0, 0, w, h);
 
   const left = 42;
@@ -358,9 +502,11 @@ function drawAmp20(canvas, hist) {
   ctx.fillStyle = '#10151f';
   ctx.fillRect(0, 0, w, h);
 
+  // amps：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const amps = hist.map((x) => Math.abs(x.delta));
   const maxAmp = Math.max(...amps, 1);
 
+  // tY：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const tY = (v) => top + (1 - (v + 4) / 8) * (mid - top - 8);
   [-4, -2, 0, 2, 4].forEach((v) => {
     const yy = tY(v);
@@ -392,6 +538,7 @@ function drawAmp20(canvas, hist) {
 
   const bTop = mid + 10;
   const bH = h - bTop - bottom;
+  // bY：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const bY = (v) => bTop + (1 - v / maxAmp) * bH;
 
   ctx.strokeStyle = '#ffffff1f';
@@ -437,6 +584,7 @@ function drawAmp20(canvas, hist) {
   ctx.stroke();
 }
 
+// makeMonitorRows：函式用途註解，說明此處封裝一段可重用的流程。
 function makeMonitorRows(mode, data) {
   const all = [...data.topStocks, ...data.screenResults];
   let source = [];
@@ -444,6 +592,7 @@ function makeMonitorRows(mode, data) {
   if (mode === '高價股') source = all.filter((x) => (x.price || 0) >= 500).sort((a, b) => (b.price || 0) - (a.price || 0)).slice(0, 12);
   if (mode === '熱門股') source = all.sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(0, 12);
   if (mode === '自選股') {
+    // set：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const set = data.watchlist.map((x) => x.code);
     source = set.map((c) => all.find((x) => x.code === c)).filter(Boolean).slice(0, 12);
   }
@@ -464,7 +613,9 @@ function makeMonitorRows(mode, data) {
   });
 }
 
+// mount：函式用途註解，說明此處封裝一段可重用的流程。
 export function mount(container) {
+  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 1｜期貨總覽</h2><span class="page-clock" id="p1-clock"></span></div>
     <div class="p1-layout" id="p1-layout">
@@ -473,6 +624,7 @@ export function mount(container) {
       <section class="panel p1-center p1-resize">
         <div class="panel__header"><span class="panel__badge">C</span><h3 class="panel__title">TAIEX FUTURES 主圖</h3></div>
         <div class="panel__body p1-tv">
+          <!-- C 區圖表分頁：自有資料為 Lightweight Charts，TradingView 與 Charting Library 保留替換路徑。 -->
           <div class="p1-chart-tabs" id="p1-chart-tabs">
             <button data-k="lightweight" class="is-active">自有資料</button>
             <button data-k="tradingview">TradingView</button>
@@ -495,6 +647,7 @@ export function mount(container) {
   `;
 
   const layoutEl = container.querySelector('#p1-layout');
+  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (name, fallback) => {
     const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -564,8 +717,11 @@ export function mount(container) {
     { key: 'amp20', label: '20日振幅變化' }
   ];
 
+  // renderBTabs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderBTabs = () => {
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p1-b-tabs').innerHTML = bTabs.map((t) => `<button data-k="${t.key}" class="${activeBTab === t.key ? 'is-active' : ''}">${t.label}</button>`).join('');
+    // 段落說明：綁定使用者互動事件。
     container.querySelectorAll('#p1-b-tabs button').forEach((btn) => btn.addEventListener('click', () => {
       activeBTab = btn.dataset.k;
       renderBTabs();
@@ -573,15 +729,18 @@ export function mount(container) {
     }));
   };
 
+  // attachAmpResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const attachAmpResize = () => {
     if (ampResizeObserver) ampResizeObserver.disconnect();
     const wrap = container.querySelector('#p1-amp20-wrap');
     const cvs = container.querySelector('#p1-amp20');
     if (!wrap || !cvs) return;
+    // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
     ampResizeObserver = new ResizeObserver(() => drawAmp20(cvs, histData));
     ampResizeObserver.observe(wrap);
   };
 
+  // renderBContent：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderBContent = () => {
     cards.forEach((x) => x.destroy()); cards = [];
     if (ampResizeObserver) { ampResizeObserver.disconnect(); ampResizeObserver = null; }
@@ -589,9 +748,11 @@ export function mount(container) {
     const box = container.querySelector('#p1-b-content');
 
     if (activeBTab === 'weighted') {
+      // 段落說明：更新 DOM 內容。
       box.innerHTML = '<div class="p1-cards" id="p1-cards"></div>';
       const wrap = box.querySelector('#p1-cards');
       const list = store.get('topStocks');
+      // weighted：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const weighted = TOP10_CODES.map((code) => list.find((s) => s.code === code)).filter(Boolean);
       weighted.forEach((s) => cards.push(new StockCard(wrap, { stock: s })));
       return;
@@ -600,6 +761,7 @@ export function mount(container) {
     if (activeBTab === 'intraday') {
       const t = store.get('taiex');
       const f = store.get('futures');
+      // 段落說明：更新 DOM 內容。
       box.innerHTML = `
         <div class="p1-rows">
           <div class="p1-row"><span>加權 開/高/低</span><strong>${t.open} / ${t.high} / ${t.low}</strong></div>
@@ -613,7 +775,9 @@ export function mount(container) {
 
     if (activeBTab === 'watch') {
       const w = store.get('watchlist');
+      // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
       const map = new Map([...store.get('topStocks'), ...store.get('screenResults')].map((x) => [x.code, x]));
+      // 段落說明：更新 DOM 內容。
       box.innerHTML = `<div class="p1-rows">${w.map((x) => {
         const q = map.get(x.code) || { price: '-', changePct: 0 };
         return `<div class="p1-row"><span>${x.group}｜${x.code} ${x.name}</span><strong class="${c(q.changePct)}">${q.price} / ${q.changePct}%</strong></div>`;
@@ -624,6 +788,7 @@ export function mount(container) {
     if (activeBTab === 'volume') {
       const t = store.get('taiex');
       const ratio = Math.min(100, Math.max(0, (t.volume / (t.volEstimate || 1)) * 100));
+      // 段落說明：更新 DOM 內容。
       box.innerHTML = `
         <div class="p1-rows">
           <div class="p1-row"><span>目前成交量</span><strong>${t.volume}</strong></div>
@@ -635,11 +800,13 @@ export function mount(container) {
       return;
     }
 
+    // 段落說明：更新 DOM 內容。
     box.innerHTML = '<div id="p1-amp20-wrap" class="p1-amp20-wrap"><canvas id="p1-amp20" style="width:100%;height:100%"></canvas></div>';
     drawAmp20(box.querySelector('#p1-amp20'), histData);
     attachAmpResize();
   };
 
+  // renderLeftPanel：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderLeftPanel = () => {
     const d = store.get('taiex');
     const f = store.get('futures');
@@ -649,6 +816,7 @@ export function mount(container) {
     const liveChangePct = m.prevClose ? (liveChange / m.prevClose) * 100 : 0;
     const liveAmplitude = Math.abs(m.high - m.low);
 
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p1-main').innerHTML = `
       <div class="p1-kv"><span>商品</span><strong><label class="p1-radio"><input type="radio" name="p1-product" value="台指(全)" ${isFull ? 'checked' : ''}>台指(全)</label><label class="p1-radio"><input type="radio" name="p1-product" value="台指" ${!isFull ? 'checked' : ''}>台指</label></strong></div>
       <div class="p1-main-top">
@@ -676,18 +844,23 @@ export function mount(container) {
       ampPct: liveChangePct
     });
 
+    // upper：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const upper = [d.price + 280, d.price + 180, d.price + 100, d.price + 40, d.price + 10].map((x) => x.toFixed(0));
+    // lower：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const lower = [d.price - 10, d.price - 40, d.price - 100, d.price - 180, d.price - 280].map((x) => x.toFixed(0));
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p1-levels').innerHTML = `
       <div class="p1-block p1-block--red"><div class="p1-block-title">日多方關卡</div>${upper.map((x, i) => `<div class="p1-kv"><span>關卡${5 - i}</span><strong>${x}</strong></div>`).join('')}</div>
       <div class="p1-block p1-block--green"><div class="p1-block-title">日空方關卡</div>${lower.map((x, i) => `<div class="p1-kv"><span>關卡${i + 1}</span><strong>${x}</strong></div>`).join('')}</div>
     `;
 
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p1-hist').innerHTML = `
       <div class="p1-block-title">日振幅統計(近20日)</div>
       <div class="p1-amp-list">${[...AMP_GRID, ['本日振幅', liveAmplitude.toFixed(0)]].map((r) => `<div class="p1-kv"><span>${r[0]}</span><strong>${r[1]}</strong></div>`).join('')}</div>
     `;
 
+    // 段落說明：綁定使用者互動事件。
     container.querySelectorAll('input[name="p1-product"]').forEach((el) => el.addEventListener('change', (e) => {
       productMode = e.target.value;
       renderLeftPanel();
@@ -695,31 +868,65 @@ export function mount(container) {
     }));
   };
 
+  // renderMainTrend：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  let chartTrendState = null;
+  let s6TrendTimer = null;
+  let page1QuoteTimer = null;
+
+  const setChartTrendStateFromCandles = ({ candles, timeframe, source, symbol }) => {
+    const trend = buildChartTrendSeries(candles, timeframe);
+    if (!trend) return false;
+    const chartRows = trend.sourceRows || [];
+    const highs = chartRows.map((row) => Number(row.high)).filter(Number.isFinite);
+    const lows = chartRows.map((row) => Number(row.low)).filter(Number.isFinite);
+    const latest = chartRows.at(-1);
+    chartTrendState = {
+      trend,
+      high: Math.max(...highs, Number(latest?.close) || 0),
+      low: Math.min(...lows, Number(latest?.close) || 0),
+      timeframe,
+      source,
+      symbol,
+      sessionLabel: trend.sessionLabel || `C區${timeframe}`
+    };
+    return true;
+  };
+
   const renderMainTrend = () => {
     const taiex = store.get('taiex');
     const futures = store.get('futures');
     const snap = resolveProductSnapshot(productMode, taiex, futures);
-    const intraday = buildIntradaySeries(productMode, snap);
+    const useChartTrend = chartTrendState?.trend?.points?.length;
+    const intraday = useChartTrend ? chartTrendState.trend : buildIntradaySeries(productMode, snap);
     const avg = intraday.points[intraday.points.length - 1]?.avg ?? snap.price;
+    // totalVolume：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const totalVolume = intraday.points.reduce((sum, point) => sum + point.volume, 0);
-    drawTrend(container.querySelector('#p1-trend'), intraday, { high: snap.high, low: snap.low });
+    drawTrend(container.querySelector('#p1-trend'), intraday, {
+      high: useChartTrend ? chartTrendState.high : snap.high,
+      low: useChartTrend ? chartTrendState.low : snap.low
+    });
+    // 段落說明：更新 DOM 內容。
     container.querySelector('#p1-trend-meta').innerHTML = `
       <span>${productMode} 盤中走勢</span>
       <span>現價 ${n(snap.price, snap.price >= 100 ? 0 : 2)}</span>
       <span>本日均價 ${n(avg, avg >= 100 ? 0 : 2)}</span>
       <span>累計量 ${n(totalVolume, 0)}</span>
-      <span>時段 ${PRODUCT_SESSIONS[productMode].start} - ${PRODUCT_SESSIONS[productMode].end}</span>
+      <span>時段 ${useChartTrend ? chartTrendState.sessionLabel : `${PRODUCT_SESSIONS[productMode].start} - ${PRODUCT_SESSIONS[productMode].end}`}</span>
     `;
   };
 
+  // renderPage1Group：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderPage1Group = () => {
+    // list：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const list = store.get('watchlist').filter((x) => x.group === 'page1分組');
+    // quoteMap：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const quoteMap = new Map([...store.get('topStocks'), ...store.get('screenResults')].map((x) => [x.code, x]));
 
     miniSparks.forEach((x) => x.destroy()); miniSparks = [];
     const mini = container.querySelector('#p1-mini');
     if (!mini) return;
 
+    // 段落說明：更新 DOM 內容。
     mini.innerHTML = list.map((s) => {
       const q = quoteMap.get(s.code) || { code: s.code, name: s.name, changePct: 0, sparkline: [0, 0, 0, 0, 0] };
       return `
@@ -741,6 +948,7 @@ export function mount(container) {
     });
   };
 
+  // renderMonitor：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderMonitor = () => {
     const mode = container.querySelector('#p1-monitor-select').value;
     const rows = makeMonitorRows(mode, {
@@ -751,20 +959,28 @@ export function mount(container) {
     drawMonitor(container.querySelector('#p1-monitor-canvas'), rows);
   };
 
+  // setS6Tab：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const setS6Tab = (tab) => {
     container.querySelectorAll('#p1-s6-tabs button').forEach((b) => b.classList.toggle('is-active', b.dataset.k === tab));
     container.querySelector('#p1-s6-trend').style.display = tab === 'trend' ? '' : 'none';
     container.querySelector('#p1-s6-group').style.display = tab === 'group' ? '' : 'none';
   };
 
+  // 段落說明：綁定使用者互動事件。
   container.querySelectorAll('#p1-s6-tabs button').forEach((btn) => btn.addEventListener('click', () => setS6Tab(btn.dataset.k)));
+  // 段落說明：綁定使用者互動事件。
   container.querySelector('#p1-monitor-select').addEventListener('change', renderMonitor);
 
+  // monitorResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const monitorResize = new ResizeObserver(() => renderMonitor());
   monitorResize.observe(container.querySelector('#p1-monitor-wrap'));
+  // trendResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const trendResize = new ResizeObserver(() => renderMainTrend());
   trendResize.observe(container.querySelector('#p1-s6-trend'));
 
+  // redrawAll：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const redrawAll = () => {
     renderLeftPanel();
     renderMainTrend();
@@ -776,22 +992,124 @@ export function mount(container) {
   renderBTabs();
   redrawAll();
 
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsubTaiex = store.subscribe('taiex', redrawAll);
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsubFut = store.subscribe('futures', redrawAll);
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsubTop = store.subscribe('topStocks', redrawAll);
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const unsubWatch = store.subscribe('watchlist', redrawAll);
 
+  // clockTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：建立定時更新流程。
   const clockTimer = setInterval(() => {
     container.querySelector('#p1-clock').textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
   }, 1000);
 
+  const syncChartDataToStore = ({ candles, latest, previous, symbolConfig, source, timeframe }) => {
+    if (!latest || !symbolConfig) return;
+    const close = Number(latest.close);
+    const open = Number(latest.open);
+    const high = Number(latest.high);
+    const low = Number(latest.low);
+    if (![close, open, high, low].every(Number.isFinite)) return;
+
+    const prevClose = Number(previous?.close);
+    const base = Number.isFinite(prevClose) && prevClose !== 0 ? prevClose : open;
+    const change = +(close - base).toFixed(2);
+    const changePct = base ? +((change / base) * 100).toFixed(2) : 0;
+    const volume = Number(latest.volume);
+    const payloadBase = {
+      price: +close.toFixed(2),
+      open: +open.toFixed(2),
+      high: +high.toFixed(2),
+      low: +low.toFixed(2),
+      prevClose: Number.isFinite(prevClose) ? +prevClose.toFixed(2) : undefined,
+      change,
+      changePct,
+      volume: Number.isFinite(volume) ? volume : undefined,
+      source: 'chart',
+      chartSource: source,
+      chartTimeframe: timeframe,
+      sourceUpdatedAt: Date.now()
+    };
+    if (
+      symbolConfig.value === 'INDEX:TWII' ||
+      symbolConfig.value === 'TWSE:TAIEX' ||
+      symbolConfig.type === 'future' ||
+      symbolConfig.value === 'TXF' ||
+      symbolConfig.value === 'TX'
+    ) {
+      setChartTrendStateFromCandles({ candles, timeframe, source, symbol: symbolConfig.value });
+    }
+
+    if (symbolConfig.value === 'INDEX:TWII' || symbolConfig.value === 'TWSE:TAIEX') {
+      const current = store.get('taiex');
+      store.set('taiex', {
+        ...current,
+        ...payloadBase,
+        volume: payloadBase.volume ?? current.volume,
+        volEstimate: payloadBase.volume ?? current.volEstimate
+      });
+      const currentFutures = store.get('futures');
+      store.set('futures', {
+        ...currentFutures,
+        ...payloadBase,
+        prevClose: payloadBase.prevClose ?? currentFutures.prevClose,
+        source: 'chart-index'
+      });
+      return;
+    }
+
+    if (symbolConfig.type === 'future' || symbolConfig.value === 'TXF' || symbolConfig.value === 'TX') {
+      const current = store.get('futures');
+      store.set('futures', {
+        ...current,
+        ...payloadBase,
+        prevClose: payloadBase.prevClose ?? current.prevClose
+      });
+    }
+  };
+
+  const refreshS6TickTrend = async () => {
+    if (chartTrendState?.symbol && chartTrendState.symbol !== 'INDEX:TWII' && chartTrendState.symbol !== 'TWSE:TAIEX') return;
+    try {
+      const candles = await fetchYahooCandles({ symbol: 'INDEX:TWII', timeframe: '1m' });
+      if (setChartTrendStateFromCandles({
+        candles,
+        timeframe: '1m',
+        source: 'yahoo-tick',
+        symbol: 'INDEX:TWII'
+      })) {
+        renderMainTrend();
+      }
+    } catch (error) {
+      console.warn('[page1] section 6 tick trend refresh failed:', error);
+    }
+  };
+
+  const refreshPage1Quotes = async (force = false) => {
+    try {
+      await updateYahooTaiexOnce({ force });
+    } catch (error) {
+      console.warn('[page1] quote refresh failed:', error);
+    }
+  };
+
   const chartOptions = {
     symbol: 'INDEX:TWII',
     timeframe: 'D',
-    pollMs: 15000,
+    source: getDashboardDataSource(),
+    pollMs: 10000,
+    onDataUpdate: syncChartDataToStore,
+    getDataSource: getDashboardDataSource,
+    onDataSourceChange: setDashboardDataSource,
+    subscribeDataSourceChange: subscribeDashboardDataSource,
     // TODO: replace with your backend/proxy endpoint for TAIFEX OHLCV data.
     // Expected JSON/CSV fields: time/open/high/low/close/volume.
     taifexUrl: '',
+    dataSources: DASHBOARD_DATA_SOURCES,
     symbols: [
       { label: '加權指數', value: 'INDEX:TWII', source: 'yahoo' },
       { label: '台積電', value: '2330', source: 'yahoo' },
@@ -805,20 +1123,26 @@ export function mount(container) {
   };
 
   let activeChartTab = 'lightweight';
+  // stopLightweightChart：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   let stopLightweightChart = () => {};
+  // stopTradingViewWidget：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   let stopTradingViewWidget = () => {};
   let tradingViewMounted = false;
 
+  // 三個圖表分頁共用同一個 C 區容器；只有 TradingView 需要延遲掛載外部 widget。
   const chartLightweightEl = container.querySelector('#p1-chart-lightweight');
   const chartTradingViewEl = container.querySelector('#p1-chart-tradingview');
   const chartingLibraryEl = container.querySelector('#p1-chart-chartinglib');
 
+  // 自有資料圖表：由 services/marketChart.js 處理資料來源、CSV、指標與 Lightweight Charts。
   const mountLightweight = () => {
     mountMarketChart(chartLightweightEl, chartOptions)
       .then((fn) => { stopLightweightChart = fn; })
+      // 段落說明：更新 DOM 內容。
       .catch(() => { chartLightweightEl.innerHTML = '<div style="color:var(--text2)">Lightweight Charts 載入失敗</div>'; });
   };
 
+  // TradingView widget 只有切到該分頁時才載入，避免預設頁面多載外部資源。
   const mountTradingViewTab = () => {
     if (tradingViewMounted) return;
     tradingViewMounted = true;
@@ -827,9 +1151,11 @@ export function mount(container) {
       interval: 'D'
     })
       .then((fn) => { stopTradingViewWidget = fn; })
+      // 段落說明：更新 DOM 內容。
       .catch(() => { chartTradingViewEl.innerHTML = '<div style="color:var(--text2)">TradingView 載入失敗</div>'; });
   };
 
+  // 單純切換分頁顯示狀態；Charting Library 目前是預留區，日後可在這裡接掛載流程。
   const setChartTab = (tab) => {
     activeChartTab = tab;
     container.querySelectorAll('#p1-chart-tabs button').forEach((btn) => {
@@ -842,14 +1168,22 @@ export function mount(container) {
   };
 
   container.querySelectorAll('#p1-chart-tabs button').forEach((btn) => {
+    // 段落說明：綁定使用者互動事件。
     btn.addEventListener('click', () => setChartTab(btn.dataset.k));
   });
 
   mountLightweight();
+  refreshPage1Quotes(true);
+  page1QuoteTimer = setInterval(refreshPage1Quotes, 10000);
+  refreshS6TickTrend();
+  s6TrendTimer = setInterval(refreshS6TickTrend, 10000);
 
   cleanup = () => {
     unsubTaiex(); unsubFut(); unsubTop(); unsubWatch();
+    // 段落說明：清除定時器，避免頁面卸載後繼續執行。
     clearInterval(clockTimer);
+    if (page1QuoteTimer) clearInterval(page1QuoteTimer);
+    if (s6TrendTimer) clearInterval(s6TrendTimer);
     stopLightweightChart();
     stopTradingViewWidget();
     monitorResize.disconnect();
@@ -861,9 +1195,11 @@ export function mount(container) {
     pLeft.destroy(); p6.destroy(); p5.destroy();
   };
 
+  // 段落說明：回傳目前頁面的清理函式。
   return cleanup;
 }
 
+// unmount：函式用途註解，說明此處封裝一段可重用的流程。
 export function unmount() {
   cleanup();
   cleanup = () => {};

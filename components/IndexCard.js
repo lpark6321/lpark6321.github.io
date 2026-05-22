@@ -1,7 +1,9 @@
-﻿import { Sparkline } from './Sparkline.js';
+// 指數卡片元件：顯示指數價格、漲跌與迷你走勢。
+import { Sparkline } from './Sparkline.js';
 import { StatusCountdown } from './StatusCountdown.js';
 import { getMarketStatus, getNextEvent } from '../services/marketCalendar.js';
 
+// cls：函式用途註解，說明此處封裝一段可重用的流程。
 function cls(num) {
   return num >= 0 ? 'metric-up' : 'metric-down';
 }
@@ -13,10 +15,14 @@ const STATUS_TEXT = {
   after: '盤後'
 };
 
+// IndexCard：類別用途註解，集中管理相關狀態與方法。
 export class IndexCard {
+  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
+    // 段落說明：建立新的 DOM 節點。
     this.root = document.createElement('article');
     this.root.className = 'panel';
+    // 段落說明：更新 DOM 內容。
     this.root.innerHTML = `
       <div class="panel__body">
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -35,10 +41,12 @@ export class IndexCard {
     `;
     this.spark = new Sparkline(this.root.querySelector('.spark'), { width: 220, height: 44, color: 'rgb(240,58,95)' });
     this.countdown = new StatusCountdown(this.root.querySelector('.timer'));
+    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.root);
     this.update(options.data || null);
   }
 
+  // update：方法用途註解，處理此元件或類別的一段行為。
   update(data) {
     if (!data) return;
     const status = getMarketStatus(data.id, new Date());
@@ -62,9 +70,11 @@ export class IndexCard {
     if (next?.utcTime) this.countdown.update(next.utcTime);
   }
 
+  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
     this.countdown.destroy();
     this.spark.destroy();
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.root.remove();
   }
 }

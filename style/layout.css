@@ -52,6 +52,45 @@ body {
   border-color: var(--gold);
   color: var(--gold);
 }
+.shell-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--card);
+  overflow: visible;
+  white-space: nowrap;
+}
+.shell-source__label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  line-height: 1;
+  color: var(--gold);
+  font-weight: 700;
+  font-size: 14px !important;
+}
+.shell-source__select {
+  min-width: 160px;
+  height: 30px;
+  line-height: 30px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #111827;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px !important;
+}
+.shell-source-status {
+  color: var(--text2);
+  font-size: 13px !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 .shell__main {
   min-height: 0;
   padding: 8px;

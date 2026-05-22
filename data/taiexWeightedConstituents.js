@@ -1,3 +1,4 @@
+// 加權指數成分與產業權重資料：提供 Page6 加權與類股市場地圖。
 export const TAIEX_DATA_DATE = '2026-03-31';
 export const TAIEX_SOURCE_URL = 'https://www.taifex.com.tw/cht/2/weightedPriceIndex';
 export const TAIEX_COMPONENT_SOURCE_URL = 'https://www.taifex.com.tw/cht/2/weightedPropertion';
@@ -292,10 +293,12 @@ const TAIEX_WEIGHTED_RAW = [
   { rank: 100, code: '8210', name: '勤誠', weightPct: 0.1055 }
 ];
 
+// resolveSector：函式用途註解，說明此處封裝一段可重用的流程。
 function resolveSector(code) {
   return STOCK_SECTOR_BY_CODE[code] || '其他';
 }
 
+// resolveYahooSector：函式用途註解，說明此處封裝一段可重用的流程。
 function resolveYahooSector(taiexSector) {
   return YAHOO_SECTOR_BY_TAIEX_SECTOR[taiexSector] || '其他';
 }
