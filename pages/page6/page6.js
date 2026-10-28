@@ -9,7 +9,7 @@ import { TreemapControls } from '../../components/TreemapControls.js';
 import { TreemapTooltip } from '../../components/TreemapTooltip.js';
 import { TreemapDetail } from '../../components/TreemapDetail.js';
 import { SunburstChart } from '../../components/SunburstChart.js';
-import { simulateMarketMap, stopMarketMapSimulator } from '../../services/priceSimulator.js';
+import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
 
 // cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
@@ -118,7 +118,8 @@ function mergeData() {
   // 這樣 Page6 的版面比例不會因模擬報價缺資料而消失。
   const marketRows = store.get('marketMap') || [];
   // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const map = new Map(marketRows.map((row) => [String(row.code), row]));
+  const liveRows = marketRows.filter((row) => row?.source === 'yahoo');
+  const map = new Map(liveRows.map((row) => [String(row.code), row]));
 
   return PAGE6_UNIVERSE.map((stock) => {
     const live = map.get(stock.code) || {};
@@ -176,6 +177,7 @@ export function mount(container) {
   });
 
   let currentChart = null;
+  let quoteTimer = null;
   const chartState = {
     groupMode: 'sector',
     colorMetric: 'changePct',
@@ -262,7 +264,17 @@ export function mount(container) {
   });
 
   currentChart.update?.(mergeData());
-  simulateMarketMap();
+
+  const refreshQuotes = async (force = false) => {
+    try {
+      await updateYahooTaiexOnce({ force });
+    } catch (error) {
+      console.warn('[page6] quote refresh failed:', error);
+    }
+  };
+
+  refreshQuotes(true);
+  quoteTimer = setInterval(refreshQuotes, 10000);
 
   // unsub：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
@@ -272,7 +284,7 @@ export function mount(container) {
 
   cleanup = () => {
     unsub();
-    stopMarketMapSimulator();
+    if (quoteTimer) clearInterval(quoteTimer);
     stopDetailSplit();
     controls.destroy();
     currentChart?.destroy?.();

@@ -43,7 +43,7 @@ export class StockCard {
     this.changeEl.textContent = `${up ? '+' : ''}${stock.changePct}%`;
     this.changeEl.className = up ? 'metric-up' : 'metric-down';
     this.spark.options.color = up ? 'rgb(240,58,95)' : 'rgb(31,214,122)';
-    this.spark.update(stock.sparkline || []);
+    this.spark.update(stock.sparkline || [], stock.sparklineBaseline ?? null);
   }
 
   // destroy：方法用途註解，處理此元件或類別的一段行為。

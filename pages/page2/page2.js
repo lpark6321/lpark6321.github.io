@@ -3,12 +3,17 @@ import { store } from '../../data/store.js';
 import { Panel } from '../../components/Panel.js';
 import { Gauge } from '../../components/Gauge.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
+import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
+import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
+import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
 
 // cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
 const TOP10_CODES = ['2330', '2308', '2317', '2454', '3711', '2881', '2382', '2412', '2882', '2891'];
 const CATEGORY_KEYS = ['台指', '電子', '金融', '傳產', '摩台'];
+const LIMIT_FALLBACK_PCT = 9.8;
 
 // c：函式用途註解，說明此處封裝一段可重用的流程。
 function c(v) {
@@ -165,11 +170,13 @@ function drawSectorPie(canvas, data, options = {}) {
   const cx = box / 2;
   const cy = box / 2;
   const r = box * 0.48;
-  const items = [
-    { value: data.upPct, color: '#8bc34a' },
-    { value: data.flatPct, color: '#d0d0d0' },
-    { value: data.downPct, color: '#f4867c' }
-  ];
+  const items = Array.isArray(data.segments)
+    ? data.segments
+    : [
+        { value: data.upPct, color: '#f4867c' },
+        { value: data.flatPct, color: '#d0d0d0' },
+        { value: data.downPct, color: '#8bc34a' }
+      ];
   // total：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
   let start = -Math.PI / 2;
@@ -209,6 +216,241 @@ function getCategoryStats(taiex, sectors) {
   ];
 }
 
+function pctFromPrevClose(value, prevClose) {
+  const price = Number(value);
+  const base = Number(prevClose);
+  if (!Number.isFinite(price) || !Number.isFinite(base) || base === 0) return null;
+  return ((price - base) / base) * 100;
+}
+
+function quoteClosePct(row) {
+  const direct = Number(row.changePct);
+  if (Number.isFinite(direct)) return direct;
+  return pctFromPrevClose(row.price, row.prevClose) ?? 0;
+}
+
+function quoteOhlcPct(row) {
+  const close = quoteClosePct(row);
+  const open = pctFromPrevClose(row.open, row.prevClose) ?? close;
+  const high = pctFromPrevClose(row.high, row.prevClose) ?? Math.max(open, close);
+  const low = pctFromPrevClose(row.low, row.prevClose) ?? Math.min(open, close);
+  return {
+    open,
+    high: Math.max(high, open, close),
+    low: Math.min(low, open, close),
+    close
+  };
+}
+
+function rowWeight(row) {
+  const weight = Number(row.taiexWeightPct ?? row.weightPct ?? row.marketCap);
+  return Number.isFinite(weight) && weight > 0 ? weight : 1;
+}
+
+function weightedAverage(rows, getter) {
+  let weighted = 0;
+  let totalWeight = 0;
+  rows.forEach((row) => {
+    const value = getter(row);
+    if (!Number.isFinite(value)) return;
+    const weight = rowWeight(row);
+    weighted += value * weight;
+    totalWeight += weight;
+  });
+  return totalWeight ? weighted / totalWeight : 0;
+}
+
+function summarizeQuoteRows(label, rows) {
+  if (!rows.length) return { label, open: 0, high: 0, low: 0, close: 0 };
+  const ohlcRows = rows.map((row) => ({ row, ohlc: quoteOhlcPct(row) }));
+  const open = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.open);
+  const close = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.close);
+  const high = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.high);
+  const low = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.low);
+  return {
+    label,
+    open: +open.toFixed(2),
+    high: +Math.max(high, open, close).toFixed(2),
+    low: +Math.min(low, open, close).toFixed(2),
+    close: +close.toFixed(2)
+  };
+}
+
+function isElectronicRow(row) {
+  const meta = TAIEX_BY_CODE[String(row.code)] || {};
+  const sector = `${row.taiexSector || meta.sector || ''} ${row.yahooSector || meta.yahooSector || ''} ${row.sector || ''}`;
+  return /半導體|電子|電腦|通信|光電|資訊/.test(sector);
+}
+
+function isFinancialRow(row) {
+  const meta = TAIEX_BY_CODE[String(row.code)] || {};
+  const sector = `${row.taiexSector || meta.sector || ''} ${row.yahooSector || meta.yahooSector || ''} ${row.sector || ''}`;
+  return /金融|保險/.test(sector);
+}
+
+function isTraditionalRow(row) {
+  return !isElectronicRow(row) && !isFinancialRow(row);
+}
+
+function quoteRowsForCategories(topStocks, marketMap) {
+  const liveMarketRows = Array.isArray(marketMap)
+    ? marketMap.filter((row) => row.source === 'yahoo' && Number.isFinite(Number(row.price)) && Number.isFinite(Number(row.changePct)))
+    : [];
+  if (liveMarketRows.length) return liveMarketRows;
+  return Array.isArray(topStocks) ? topStocks.filter((row) => Number.isFinite(Number(row.price))) : [];
+}
+
+function buildCategoryQuoteStats(taiex, topStocks, marketMap) {
+  const rows = quoteRowsForCategories(topStocks, marketMap);
+  const taiexOhlc = quoteOhlcPct(taiex);
+  const stats = [
+    {
+      label: '台指',
+      open: +taiexOhlc.open.toFixed(2),
+      high: +taiexOhlc.high.toFixed(2),
+      low: +taiexOhlc.low.toFixed(2),
+      close: +taiexOhlc.close.toFixed(2)
+    },
+    summarizeQuoteRows('電子', rows.filter(isElectronicRow)),
+    summarizeQuoteRows('金融', rows.filter(isFinancialRow)),
+    summarizeQuoteRows('傳產', rows.filter(isTraditionalRow))
+  ];
+  stats.push(summarizeQuoteRows('摩台', rows));
+  return stats;
+}
+
+function liveQuoteMap(marketMap) {
+  const rows = Array.isArray(marketMap) ? marketMap : [];
+  return new Map(
+    rows
+      .filter((row) => row?.source === 'yahoo' && Number.isFinite(Number(row.changePct)))
+      .map((row) => [String(row.code), row])
+  );
+}
+
+function twseTickSize(price) {
+  const value = Math.abs(Number(price));
+  if (!Number.isFinite(value)) return 0.01;
+  if (value < 10) return 0.01;
+  if (value < 50) return 0.05;
+  if (value < 100) return 0.1;
+  if (value < 500) return 0.5;
+  if (value < 1000) return 1;
+  return 5;
+}
+
+function roundToTick(price) {
+  const tick = twseTickSize(price);
+  return +(Math.round(Number(price) / tick) * tick).toFixed(2);
+}
+
+function limitPrice(prevClose, direction) {
+  const base = Number(prevClose);
+  if (!Number.isFinite(base) || base <= 0) return null;
+  return roundToTick(base * (direction === 'up' ? 1.1 : 0.9));
+}
+
+function isLimitQuote(row, direction) {
+  const price = Number(row?.price);
+  const prevClose = Number(row?.prevClose);
+  const changePct = Number(row?.changePct);
+  const limit = limitPrice(prevClose, direction);
+  if (Number.isFinite(price) && Number.isFinite(limit)) {
+    const tick = twseTickSize(limit);
+    return direction === 'up'
+      ? price >= limit - tick / 2
+      : price <= limit + tick / 2;
+  }
+  if (!Number.isFinite(changePct)) return false;
+  return direction === 'up'
+    ? changePct >= LIMIT_FALLBACK_PCT
+    : changePct <= -LIMIT_FALLBACK_PCT;
+}
+
+function isRisingQuote(row) {
+  const price = Number(row?.price);
+  const prevClose = Number(row?.prevClose);
+  if (Number.isFinite(price) && Number.isFinite(prevClose)) return price > prevClose;
+  return Number(row?.changePct) > 0;
+}
+
+function isFallingQuote(row) {
+  const price = Number(row?.price);
+  const prevClose = Number(row?.prevClose);
+  if (Number.isFinite(price) && Number.isFinite(prevClose)) return price < prevClose;
+  return Number(row?.changePct) < 0;
+}
+
+function buildConstituentPieStats(constituentsByCode, marketMap, denominator) {
+  const quoteByCode = liveQuoteMap(marketMap);
+  const codes = Object.keys(constituentsByCode);
+  let up = 0;
+  let down = 0;
+  let limitUp = 0;
+  let limitDown = 0;
+
+  codes.forEach((code) => {
+    const quote = quoteByCode.get(String(code));
+    if (!quote) return;
+    const isLimitUp = isLimitQuote(quote, 'up');
+    const isLimitDown = isLimitQuote(quote, 'down');
+    if (isLimitUp) {
+      limitUp += 1;
+      up += 1;
+    } else if (isLimitDown) {
+      limitDown += 1;
+      down += 1;
+    } else if (isRisingQuote(quote)) {
+      up += 1;
+    } else if (isFallingQuote(quote)) {
+      down += 1;
+    }
+  });
+
+  const base = denominator || codes.length || 1;
+  const flat = Math.max(0, base - up - down);
+  const upOnly = Math.max(0, up - limitUp);
+  const downOnly = Math.max(0, down - limitDown);
+  return {
+    upPct: upOnly,
+    downPct: downOnly,
+    flatPct: flat,
+    upCount: up,
+    downCount: down,
+    limitUpCount: limitUp,
+    limitDownCount: limitDown,
+    flatCount: flat,
+    total: base,
+    segments: [
+      { value: limitUp, color: 'rgb(244,65,110)' },
+      { value: upOnly, color: 'rgb(244,134,124)' },
+      { value: flat, color: '#d0d0d0' },
+      { value: downOnly, color: 'rgb(139,195,74)' },
+      { value: limitDown, color: 'rgb(37,210,129)' }
+    ]
+  };
+}
+
+function buildCombinedAttackStats(marketMap) {
+  const quoteByCode = liveQuoteMap(marketMap);
+  const codes = [...new Set([...Object.keys(TW50_BY_CODE), ...Object.keys(MID100_BY_CODE)])];
+  let up = 0;
+  let down = 0;
+  let limitUp = 0;
+  let limitDown = 0;
+
+  codes.forEach((code) => {
+    const quote = quoteByCode.get(String(code));
+    if (!quote) return;
+    if (isRisingQuote(quote)) up += 1;
+    else if (isFallingQuote(quote)) down += 1;
+    if (isLimitQuote(quote, 'up')) limitUp += 1;
+    else if (isLimitQuote(quote, 'down')) limitDown += 1;
+  });
+
+  return { up, down, limitUp, limitDown, total: 150 };
+}
+
 // estimateSessionVolume：函式用途註解，說明此處封裝一段可重用的流程。
 function estimateSessionVolume(currentVolume) {
   const now = new Date();
@@ -222,10 +464,6 @@ function estimateSessionVolume(currentVolume) {
 }
 
 // driftAttack：函式用途註解，說明此處封裝一段可重用的流程。
-function driftAttack(value, max) {
-  return clamp(value + (Math.random() - 0.5) * 2.6, 0, max);
-}
-
 // drawEstimateSystem：函式用途註解，說明此處封裝一段可重用的流程。
 function drawEstimateSystem(canvas, taiex, futures) {
   // 段落說明：取得 Canvas 2D context 進行繪圖。
@@ -433,23 +671,27 @@ export function mount(container) {
   p4.body.appendChild(bearWrap);
 
   const gaugeBull = new Gauge(bullWrap, {
-    scaleMax: 160,
-    zoneStart: 120,
-    tickStep: 20,
-    color: '#f6bfd0',
-    zoneColor: '#6f3045',
-    titleColor: '#ff3f6f',
+    scaleMax: 150,
+    zoneStart: 150,
+    tickStep: 25,
+    color: 'rgb(111,93,99)',
+    baseAlpha: 1,
+    zoneColor: 'rgb(111,93,99)',
+    titleColor: 'rgb(244,134,124)',
+    needleColor: 'rgb(244,65,110)',
     width: 380,
     height: 220,
     title: '多方攻擊'
   });
   const gaugeBear = new Gauge(bearWrap, {
-    scaleMax: 160,
-    zoneStart: 120,
-    tickStep: 20,
-    color: '#b9efd3',
-    zoneColor: '#2a6f4c',
-    titleColor: '#21dc84',
+    scaleMax: 150,
+    zoneStart: 150,
+    tickStep: 25,
+    color: 'rgb(91,108,99)',
+    baseAlpha: 1,
+    zoneColor: 'rgb(91,108,99)',
+    titleColor: 'rgb(139,195,74)',
+    needleColor: 'rgb(37,210,129)',
     width: 380,
     height: 220,
     title: '空方攻擊'
@@ -462,9 +704,9 @@ export function mount(container) {
         <div class="p2-pie-card p2-pie-card--large" data-key="中型100"><div class="p2-pie-title">中型100</div><canvas></canvas></div>
       </div>
       <div class="p2-pie-bottom">
-        <div class="p2-pie-card p2-pie-card--small" data-key="電子"><div class="p2-pie-title">電子</div><canvas></canvas></div>
-        <div class="p2-pie-card p2-pie-card--small" data-key="金融"><div class="p2-pie-title">金融</div><canvas></canvas></div>
-        <div class="p2-pie-card p2-pie-card--small" data-key="傳產"><div class="p2-pie-title">傳產</div><canvas></canvas></div>
+        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="電子"><div class="p2-pie-title">電子</div><canvas></canvas></div>
+        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="金融"><div class="p2-pie-title">金融</div><canvas></canvas></div>
+        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="傳產"><div class="p2-pie-title">傳產</div><canvas></canvas></div>
       </div>
     </div>
   `);
@@ -477,12 +719,24 @@ export function mount(container) {
   p8.setContent('<div class="p2-chart-wrap p2-chart-wrap--w90"><canvas id="p2-c8" class="p2-chart-canvas"></canvas></div>');
 
   const yesterdayVolume = Number(store.get('taiex').volume) || 0;
-  const baseBullBear = store.get('bullBear');
+  const initialAttackStats = buildCombinedAttackStats(store.get('marketMap'));
   const attackState = {
-    bullValue: Number(baseBullBear?.bull?.score) || 24,
-    bullMax: 38,
-    bearValue: Number(baseBullBear?.bear?.score) || 16,
-    bearMax: 48
+    bullValue: initialAttackStats.limitUp,
+    bullMax: initialAttackStats.up,
+    bullActive: initialAttackStats.up,
+    bearValue: initialAttackStats.limitDown,
+    bearMax: initialAttackStats.down,
+    bearActive: initialAttackStats.down,
+    scaleMax: initialAttackStats.total
+  };
+  let page2QuoteTimer = null;
+
+  const refreshPage2Quotes = async (force = false) => {
+    try {
+      await updateYahooTaiexOnce({ force });
+    } catch (error) {
+      console.warn('[page2] quote refresh failed:', error);
+    }
   };
 
   const clockEl = container.querySelector('#p2-bigclock');
@@ -546,10 +800,34 @@ export function mount(container) {
 
   // renderAttackGauge：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderAttackGauge = () => {
-    const bullNeedle = (attackState.bullValue / attackState.bullMax) * 160;
-    const bearNeedle = (attackState.bearValue / attackState.bearMax) * 160;
-    gaugeBull.update({ value: bullNeedle, displayValue: attackState.bullValue, displayMax: attackState.bullMax, title: '多方攻擊' });
-    gaugeBear.update({ value: bearNeedle, displayValue: attackState.bearValue, displayMax: attackState.bearMax, title: '空方攻擊' });
+    gaugeBull.update({
+      value: attackState.bullValue,
+      activeValue: attackState.bullActive,
+      segmentValue: attackState.bullValue,
+      displayValue: attackState.bullValue,
+      displayMax: attackState.bullMax,
+      title: '多方攻擊'
+    });
+    gaugeBear.update({
+      value: attackState.bearValue,
+      activeValue: attackState.bearActive,
+      segmentValue: attackState.bearValue,
+      displayValue: attackState.bearValue,
+      displayMax: attackState.bearMax,
+      title: '空方攻擊'
+    });
+  };
+
+  const refreshAttackStateFromMarketMap = () => {
+    const stats = buildCombinedAttackStats(store.get('marketMap'));
+    attackState.bullValue = clamp(stats.limitUp, 0, stats.total);
+    attackState.bearValue = clamp(stats.limitDown, 0, stats.total);
+    attackState.bullMax = clamp(stats.up, 0, stats.total);
+    attackState.bearMax = clamp(stats.down, 0, stats.total);
+    attackState.bullActive = attackState.bullMax;
+    attackState.bearActive = attackState.bearMax;
+    attackState.scaleMax = stats.total;
+    renderAttackGauge();
   };
 
   // renderSectors：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
@@ -560,12 +838,10 @@ export function mount(container) {
     const ele = findSector('電子');
     const tra = findSector('傳產') || findSector('航運');
 
+    const marketMap = store.get('marketMap');
     const pies = {
-      台灣50: { upPct: 58, downPct: 20, flatPct: 22 },
-      中型100: { upPct: 53, downPct: 25, flatPct: 22 },
-      金融: { upPct: fin?.upPct ?? 40, downPct: fin?.downPct ?? 45, flatPct: fin?.flatPct ?? 15 },
-      電子: { upPct: ele?.upPct ?? 55, downPct: ele?.downPct ?? 30, flatPct: ele?.flatPct ?? 15 },
-      傳產: { upPct: tra?.upPct ?? 42, downPct: tra?.downPct ?? 38, flatPct: tra?.flatPct ?? 20 }
+      台灣50: buildConstituentPieStats(TW50_BY_CODE, marketMap, 50),
+      中型100: buildConstituentPieStats(MID100_BY_CODE, marketMap, 100)
     };
 
     Object.entries(pies).forEach(([key, value]) => {
@@ -588,35 +864,24 @@ export function mount(container) {
     );
 
     const taiex = store.get('taiex');
-    const sectors = store.get('sectors');
-    const cat = getCategoryStats(taiex, sectors);
+    const marketMap = store.get('marketMap');
+    const categoryStats = buildCategoryQuoteStats(taiex, stocks, marketMap);
 
-    // candles：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const candles = cat.map((x) => {
-      const close = x.chg;
-      const open = +(x.chg * 0.35).toFixed(2);
-      const high = +(Math.min(3.8, Math.max(open, close) + 0.75)).toFixed(2);
-      const low = +(Math.max(-3.8, Math.min(open, close) - 0.75)).toFixed(2);
-      return { label: x.label, open, high, low, close };
-    });
-
-    drawCategoryCandle(container.querySelector('#p2-c7'), candles, { minV: -4, maxV: 4, ticks: [-4, -2, 0, 2, 4], maxWidth: 504 });
+    drawCategoryCandle(container.querySelector('#p2-c7'), categoryStats, { minV: -4, maxV: 4, ticks: [-4, -2, 0, 2, 4], maxWidth: 504 });
     drawBars(
       container.querySelector('#p2-c8'),
-      CATEGORY_KEYS.map((k) => {
-        // hit：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-        const hit = cat.find((x) => x.label === k);
-        return { label: k, value: hit ? hit.chg : 0 };
-      }),
+      categoryStats.map((item) => ({ label: item.label, value: item.close })),
       { ticks: [-2, -1, 0, 1, 2], maxWidth: 504 }
     );
   };
 
   renderMain();
   renderFlow(store.get('moneyFlow'));
-  renderAttackGauge();
+  refreshAttackStateFromMarketMap();
   renderSectors(store.get('sectors'));
   renderCharts();
+  refreshPage2Quotes(true);
+  page2QuoteTimer = setInterval(refreshPage2Quotes, 10000);
 
   // estResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
@@ -659,22 +924,17 @@ export function mount(container) {
   });
   // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
   const u5 = store.subscribe('topStocks', renderCharts);
+  const u7 = store.subscribe('marketMap', () => {
+    refreshAttackStateFromMarketMap();
+    renderSectors(store.get('sectors'));
+    renderCharts();
+  });
   // u6：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u6 = store.subscribe('bullBear', (b) => {
-    attackState.bullValue = clamp(Number(b.bull?.score) || attackState.bullValue, 0, attackState.bullMax);
-    attackState.bearValue = clamp(Number(b.bear?.score) || attackState.bearValue, 0, attackState.bearMax);
-    renderAttackGauge();
-  });
+  const u6 = store.subscribe('bullBear', () => {});
 
   // attackTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   // 段落說明：建立定時更新流程。
-  const attackTimer = setInterval(() => {
-    attackState.bullValue = driftAttack(attackState.bullValue, attackState.bullMax);
-    attackState.bearValue = driftAttack(attackState.bearValue, attackState.bearMax);
-    renderAttackGauge();
-  }, 2500);
-
   // clockTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   // 段落說明：建立定時更新流程。
   const clockTimer = setInterval(() => {
@@ -686,15 +946,15 @@ export function mount(container) {
   cleanup = () => {
     // 段落說明：清除定時器，避免頁面卸載後繼續執行。
     clearInterval(clockTimer);
+    if (page2QuoteTimer) clearInterval(page2QuoteTimer);
     // 段落說明：清除定時器，避免頁面卸載後繼續執行。
-    clearInterval(attackTimer);
     clockResize.disconnect();
     estResize.disconnect();
     pieResize.disconnect();
     chartResize.disconnect();
     stopMainSplit();
     stopCenterSplit();
-    u1(); u2(); u3(); u4(); u5(); u6();
+    u1(); u2(); u3(); u4(); u5(); u6(); u7();
     gaugeBull.destroy();
     gaugeBear.destroy();
     p1.destroy(); p2.destroy(); p10.destroy(); p3.destroy(); p4.destroy(); p5.destroy(); p6.destroy(); p7.destroy(); p8.destroy();

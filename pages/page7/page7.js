@@ -3,7 +3,8 @@ import { store } from '../../data/store.js';
 import { IndexCard } from '../../components/IndexCard.js';
 import { WorldClockStrip } from '../../components/WorldClockStrip.js';
 import { isMarketOpen, setUsDstMode } from '../../services/marketCalendar.js';
-import { simulateGlobalIndices } from '../../services/priceSimulator.js';
+import { stopGlobalSimulator } from '../../services/priceSimulator.js';
+import { startYahooGlobalIndicesPoller, stopYahooGlobalIndicesPoller } from '../../services/yahooGlobalPoller.js';
 
 // cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
@@ -27,7 +28,8 @@ export function mount(container) {
     </div>
   `;
 
-  simulateGlobalIndices();
+  stopGlobalSimulator();
+  startYahooGlobalIndicesPoller();
   setUsDstMode('auto');
 
   const strip = new WorldClockStrip(container.querySelector('#p7-clock'), {
@@ -74,6 +76,8 @@ export function mount(container) {
 
   cleanup = () => {
     unsub();
+    stopYahooGlobalIndicesPoller();
+    stopGlobalSimulator();
     cards.forEach((c) => c.destroy());
     strip.destroy();
   };

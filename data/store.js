@@ -27,6 +27,28 @@ const state = {
     change: -73,
     changePct: -0.22
   },
+  futuresDay: {
+    price: 32407,
+    open: 32649,
+    high: 32858,
+    low: 32282,
+    prevClose: 32480,
+    change: -73,
+    changePct: -0.22,
+    source: 'kgi_dde',
+    sourceSymbol: 'FITX*1'
+  },
+  futuresFull: {
+    price: 32407,
+    open: 32649,
+    high: 32858,
+    low: 32282,
+    prevClose: 32480,
+    change: -73,
+    changePct: -0.22,
+    source: 'kgi_dde',
+    sourceSymbol: 'FITXN*1'
+  },
   sectors: [
     { name: '電子', upPct: 55, downPct: 30, flatPct: 15 },
     { name: '金融', upPct: 40, downPct: 45, flatPct: 15 },

@@ -4,6 +4,8 @@ const LIGHTWEIGHT_CHARTS_URL =
 
 // Yahoo 不同週期對應的 chart API interval/range；圖表內部統一轉成 OHLCV。
 const TIMEFRAME_TO_YAHOO = {
+  '1s': { interval: '1m', range: '1d' },
+  tick: { interval: '1m', range: '1d' },
   '1m': { interval: '1m', range: '1d' },
   '5m': { interval: '5m', range: '5d' },
   D: { interval: '1d', range: '6mo' },
@@ -17,13 +19,78 @@ const DOWN_COLOR = '#1fd67a';
 const SMA_COLOR = '#2962ff';
 const VOLUME_UP_COLOR = 'rgba(240,58,95,.48)';
 const VOLUME_DOWN_COLOR = 'rgba(31,214,122,.48)';
+const VOLUME_ALERT_DAY_COLOR = 'rgba(245,200,66,.95)';
+const VOLUME_ALERT_AFTER_HOURS_COLOR = 'rgba(130,224,170,.95)';
+const DAY_VOLUME_REFERENCE = 1500;
+const AFTER_HOURS_VOLUME_REFERENCE = 400;
+const TAIEX_SESSION_START_SECONDS = 9 * 60 * 60;
+const TAIEX_SESSION_END_SECONDS = 13 * 60 * 60 + 30 * 60;
+const FUTURES_DAY_SESSION_START_SECONDS = 8 * 60 * 60 + 45 * 60;
+const FUTURES_DAY_SESSION_END_SECONDS = 13 * 60 * 60 + 45 * 60;
+const DEFAULT_KGI_DDE_URL = 'http://127.0.0.1:8788/api/broker-candles';
+const DEFAULT_KGI_RTD_URL = 'http://127.0.0.1:8789/api/broker-candles';
+const DEFAULT_TAISHIN_DDE_URL = 'http://127.0.0.1:8790/api/broker-candles';
+const REQUIRED_LIVE_DATA_SOURCES = [
+  { label: '凱基DDE', value: 'kgi_dde' },
+  { label: '凱基RTD', value: 'kgi_rtd' },
+  { label: '台新DDE', value: 'taishin_dde' }
+];
 // 期交所逐筆 CSV 內台指期常見商品代號；載入 CSV 時用這組代號篩出台指期。
-const TAIEX_FUTURE_CODES = ['TX', 'TXF'];
+const TAIEX_FUTURE_CODES = ['TX'];
+const TAIFEX_TICK_COLUMNS = {
+  date: 0,
+  product: 1,
+  month: 2,
+  time: 3,
+  price: 4,
+  volume: 5,
+  nearPrice: 6,
+  farPrice: 7,
+  auction: 8
+};
+const TAIFEX_MIN_VALID_FUTURES_PRICE = 1000;
 const DEFAULT_YAHOO_PROXY_BASE = 'http://127.0.0.1:8787/api';
 const FINMIND_FUTURES_SNAPSHOT_ENDPOINT = 'finmind-futures-snapshot';
 const FINMIND_FUTURES_DAILY_ENDPOINT = 'finmind-futures-daily';
 
 let lightweightPromise = null;
+
+function isSecondTimeframe(timeframe) {
+  return timeframe === '1s' || timeframe === 'tick';
+}
+
+function isIntradayTimeframe(timeframe) {
+  return isSecondTimeframe(timeframe) || timeframe === '1m' || timeframe === '5m';
+}
+
+function isTaiexIndexSymbol(symbol) {
+  return symbol === 'INDEX:TWII' || symbol === 'TWSE:TAIEX';
+}
+
+function taipeiSecondOfDay(time = Date.now()) {
+  const date = time instanceof Date ? time : new Date(time);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Taipei',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  const second = Number(parts.find((part) => part.type === 'second')?.value);
+  return [hour, minute, second].every(Number.isFinite) ? hour * 3600 + minute * 60 + second : null;
+}
+
+function isTaiexTradingTime(time = Date.now()) {
+  const second = taipeiSecondOfDay(time);
+  return Number.isFinite(second) && second >= TAIEX_SESSION_START_SECONDS && second <= TAIEX_SESSION_END_SECONDS;
+}
+
+function isFuturesDayTradingTime(time = Date.now()) {
+  const second = taipeiSecondOfDay(time);
+  return Number.isFinite(second) && second >= FUTURES_DAY_SESSION_START_SECONDS && second <= FUTURES_DAY_SESSION_END_SECONDS;
+}
 
 // loadLightweightChartsScript：函式用途註解，說明此處封裝一段可重用的流程。
 export function loadLightweightChartsScript() {
@@ -57,9 +124,18 @@ export function normalizeOhlcv(row) {
   const low = Number(row.low ?? row.l);
   const close = Number(row.close ?? row.c ?? row.price);
   const volume = Number(row.volume ?? row.v ?? 0);
+  const prevClose = Number(row.prevClose ?? row.previousClose ?? row.preClose);
 
   if (!time || ![open, high, low, close].every(Number.isFinite)) return null;
-  return { time, open, high, low, close, volume: Number.isFinite(volume) ? volume : 0 };
+  return {
+    time,
+    open,
+    high,
+    low,
+    close,
+    volume: Number.isFinite(volume) ? volume : 0,
+    prevClose: Number.isFinite(prevClose) ? prevClose : undefined
+  };
 }
 
 // normalizeTime：函式用途註解，說明此處封裝一段可重用的流程。
@@ -172,7 +248,20 @@ export async function fetchBrokerCandles({ brokerUrl, symbol, timeframe = 'D' })
     cache: 'no-store',
     headers: { Accept: 'application/json' }
   });
-  if (!response.ok) throw new Error(`Broker chart source HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const payload = await response.json();
+      detail = payload?.error || payload?.message || '';
+    } catch {
+      try {
+        detail = await response.text();
+      } catch {
+        detail = '';
+      }
+    }
+    throw new Error(`Broker chart source HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+  }
 
   return normalizeTaifexJson(await response.json())
     .map(normalizeOhlcv)
@@ -196,6 +285,7 @@ function resolveFinMindToken(options = {}) {
 // bucketTime：把 snapshot 時間對齊目前圖表週期，避免同一分鐘內重複產生多根 K。
 function bucketTime(time, timeframe) {
   if (typeof time !== 'number') return time;
+  if (isSecondTimeframe(timeframe)) return time;
   if (timeframe === '1m') return Math.floor(time / 60) * 60;
   if (timeframe === '5m') return Math.floor(time / 300) * 300;
   return dateKeyFromUnix(time);
@@ -372,64 +462,115 @@ function normalizeTaifexJson(payload) {
 
 // buildCandlesFromTaifexTickCsv：函式用途註解，說明此處封裝一段可重用的流程。
 function buildCandlesFromTaifexTickCsv(text, { timeframe = 'D', productCodes = TAIEX_FUTURE_CODES } = {}) {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return [];
+  const lines = text.split(/\r?\n/);
+  const headerLineIndex = lines.findIndex((line) => line.trim());
+  if (headerLineIndex < 0 || lines.length - headerLineIndex < 2) return [];
 
   // TAIFEX CSV may come from different exports or encodings. Header lookup is used first,
   // and the fixed column fallback keeps old daily tick files usable.
-  const headers = splitCsvLine(lines[0]).map(cleanCsvCell);
+  const headers = splitCsvLine(lines[headerLineIndex]).map(cleanCsvCell);
   const index = {
-    date: findHeaderIndex(headers, '成交日期', 0),
-    product: findHeaderIndex(headers, '商品代號', 1),
-    month: findHeaderIndex(headers, '到期月份', 2),
-    time: findHeaderIndex(headers, '成交時間', 3),
-    price: findHeaderIndex(headers, '成交價格', 4),
-    volume: findHeaderIndex(headers, '成交數量', 5)
+    date: findHeaderIndexByAliases(headers, ['成交日期'], TAIFEX_TICK_COLUMNS.date),
+    product: findHeaderIndexByAliases(headers, ['商品代號'], TAIFEX_TICK_COLUMNS.product),
+    month: findHeaderIndexByAliases(headers, ['到期月份', '到期月份(週別)'], TAIFEX_TICK_COLUMNS.month),
+    time: findHeaderIndexByAliases(headers, ['成交時間'], TAIFEX_TICK_COLUMNS.time),
+    price: findHeaderIndexByAliases(headers, ['成交價格'], TAIFEX_TICK_COLUMNS.price),
+    volume: findHeaderIndexByAliases(headers, ['成交數量', '成交數量(B+S)'], TAIFEX_TICK_COLUMNS.volume),
+    nearPrice: findHeaderIndexByAliases(headers, ['近月價格'], TAIFEX_TICK_COLUMNS.nearPrice),
+    farPrice: findHeaderIndexByAliases(headers, ['遠月價格'], TAIFEX_TICK_COLUMNS.farPrice)
   };
   // codeSet：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const codeSet = new Set(productCodes.map((code) => String(code).toUpperCase()));
+  const productOrder = productCodes.map((code) => String(code).toUpperCase());
+  const codeSet = new Set(productOrder);
+  const byProduct = new Map();
+  let matchedRows = 0;
+  let rejectedRows = 0;
 
-  // CSV 可能含有不同商品或缺漏列；先在這裡做資料品質閘門。
-  // 後續聚合邏輯假設 rows 都已經是同一商品、同一欄位格式的有效 tick。
-  // 逐筆資料先篩商品代號，再保留可解析的成交價、成交量、成交時間。
-  const ticks = lines
-    .slice(1)
-    .map((line) => splitCsvLine(line).map(cleanCsvCell))
-    .map((values) => {
-      const product = String(values[index.product] || '').toUpperCase();
-      const contractMonth = parseInt(cleanNumber(values[index.month]), 10);
-      const price = Number(cleanNumber(values[index.price]));
-      const volume = Number(cleanNumber(values[index.volume]));
-      const time = parseTaifexTickTime(values[index.date], values[index.time]);
-      return { product, contractMonth, price, volume, time };
-    })
-    .filter((row) =>
-      codeSet.has(row.product) &&
-      Number.isFinite(row.contractMonth) &&
-      Number.isFinite(row.price) &&
-      Number.isFinite(row.volume) &&
-      Number.isFinite(row.time)
-    );
+  // Keep only K buckets while parsing. This avoids holding every tick row in memory.
+  for (let lineIndex = headerLineIndex + 1; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (!line?.trim()) continue;
 
-  if (!ticks.length) {
-    throw new Error(`CSV找不到台指期商品代號：${productCodes.join('/')}`);
+    const values = splitCsvLine(line).map(cleanCsvCell);
+    const product = String(values[index.product] || '').toUpperCase();
+    if (!codeSet.has(product)) continue;
+
+    const contractMonth = parseTaifexContractMonth(values[index.month]);
+    const tradePrice = parseTaifexPrice(values[index.price]);
+    const nearPrice = parseTaifexPrice(values[index.nearPrice]);
+    const farPrice = parseTaifexPrice(values[index.farPrice]);
+    const price = resolveTaifexTradePrice(tradePrice, nearPrice, farPrice);
+    const volume = Number(cleanNumber(values[index.volume]));
+    const time = parseTaifexTickTime(values[index.date], values[index.time]);
+
+    if (
+      !Number.isFinite(contractMonth) ||
+      !Number.isFinite(price) ||
+      !Number.isFinite(volume) ||
+      !Number.isFinite(time)
+    ) {
+      rejectedRows += 1;
+      continue;
+    }
+
+    matchedRows += 1;
+    let productMonths = byProduct.get(product);
+    if (!productMonths) {
+      productMonths = new Map();
+      byProduct.set(product, productMonths);
+    }
+
+    let monthBuckets = productMonths.get(contractMonth);
+    if (!monthBuckets) {
+      monthBuckets = new Map();
+      productMonths.set(contractMonth, monthBuckets);
+    }
+
+    aggregateTickIntoCandleBuckets(monthBuckets, { time, price, volume }, timeframe);
+  }
+
+  if (!matchedRows) {
+    throw new Error(`CSV找不到可用的期交所商品代號：${productCodes.join('/')}`);
   }
 
   // 期交所逐筆檔常同時帶近月與遠月，前端看盤先以近月代表主力合約。
   // 若之後要做換月規則，擴充點會在這個 nearMonth 選擇邏輯。
-  // 近月以 CSV 中可用到期月份的最小值判斷；日後若要處理換倉可在這裡擴充。
-  const nearMonth = Math.min(...ticks.map((row) => row.contractMonth));
-  const frontMonthTicks = ticks
-    .filter((row) => row.contractMonth === nearMonth)
-    .sort((a, b) => a.time - b.time);
+  // 先依商品代號順序選定商品，再取該商品的近月，避免 TX/TXF/TMF 混在同一組 K 棒。
+  const selectedProduct = productOrder.find((code) => byProduct.has(code));
+  if (!selectedProduct) {
+    throw new Error(`CSV找不到可用的期交所商品代號：${productCodes.join('/')}`);
+  }
 
-  return aggregateTicksToCandles(frontMonthTicks, timeframe);
+  const selectedMonths = byProduct.get(selectedProduct);
+  const nearMonth = Math.min(...selectedMonths.keys());
+  const candles = [...selectedMonths.get(nearMonth).values()]
+    .map(({ firstTime, lastTime, ...candle }) => candle)
+    .sort((a, b) => sortTime(a.time, b.time));
+
+  if (!candles.length) {
+    throw new Error(`CSV找到${matchedRows}筆${selectedProduct}資料，但沒有可繪製的近月K棒；略過${rejectedRows}筆格式錯誤資料`);
+  }
+
+  return candles;
 }
 
 // findHeaderIndex：函式用途註解，說明此處封裝一段可重用的流程。
 function findHeaderIndex(headers, keyword, fallback) {
   // index：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const index = headers.findIndex((header) => header.includes(keyword));
+  return index >= 0 ? index : fallback;
+}
+
+function normalizeHeaderKey(value) {
+  return cleanCsvCell(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function findHeaderIndexByAliases(headers, aliases, fallback) {
+  const normalizedAliases = aliases.map(normalizeHeaderKey);
+  const index = headers.findIndex((header) => {
+    const normalized = normalizeHeaderKey(header);
+    return normalizedAliases.some((alias) => normalized.includes(alias));
+  });
   return index >= 0 ? index : fallback;
 }
 
@@ -441,6 +582,22 @@ function cleanCsvCell(value) {
 // cleanNumber：函式用途註解，說明此處封裝一段可重用的流程。
 function cleanNumber(value) {
   return cleanCsvCell(value).replaceAll(',', '').replaceAll('--', '').replaceAll('-', '');
+}
+
+function parseTaifexContractMonth(value) {
+  const digits = cleanCsvCell(value).replace(/\D/g, '');
+  return digits ? Number(digits) : NaN;
+}
+
+function parseTaifexPrice(value) {
+  const price = Number(cleanNumber(value));
+  return Number.isFinite(price) && price >= TAIFEX_MIN_VALID_FUTURES_PRICE ? price : NaN;
+}
+
+function resolveTaifexTradePrice(tradePrice, nearPrice, farPrice) {
+  if (Number.isFinite(tradePrice)) return tradePrice;
+  if (Number.isFinite(nearPrice)) return nearPrice;
+  return Number.isFinite(farPrice) ? farPrice : NaN;
 }
 
 // parseTaifexTickTime：函式用途註解，說明此處封裝一段可重用的流程。
@@ -458,36 +615,51 @@ function parseTaifexTickTime(dateValue, timeValue) {
   return Math.floor(new Date(year, month, day, hour, minute, second).getTime() / 1000);
 }
 
+function aggregateTickIntoCandleBuckets(buckets, tick, timeframe) {
+  const step = isSecondTimeframe(timeframe) ? 1 : timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : null;
+  const key = step ? Math.floor(tick.time / step) * step : dateKeyFromUnix(tick.time);
+  let candle = buckets.get(key);
+  if (!candle) {
+    candle = {
+      time: key,
+      open: tick.price,
+      high: tick.price,
+      low: tick.price,
+      close: tick.price,
+      volume: 0,
+      firstTime: tick.time,
+      lastTime: tick.time
+    };
+    buckets.set(key, candle);
+  }
+
+  candle.high = Math.max(candle.high, tick.price);
+  candle.low = Math.min(candle.low, tick.price);
+  candle.volume += tick.volume;
+  if (tick.time < candle.firstTime) {
+    candle.open = tick.price;
+    candle.firstTime = tick.time;
+  }
+  if (tick.time >= candle.lastTime) {
+    candle.close = tick.price;
+    candle.lastTime = tick.time;
+  }
+}
+
 // aggregateTicksToCandles：函式用途註解，說明此處封裝一段可重用的流程。
 function aggregateTicksToCandles(ticks, timeframe) {
   const buckets = new Map();
-  const step = timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : null;
 
   // 分 K 用固定秒數切 bucket，日 K 則用日期字串切 bucket。
   // 這讓 Yahoo、TAIFEX、券商 API 最後都能回到同一種 OHLCV candle 結構。
   // 同一個時間 bucket 內：第一筆為 open、最高/最低更新 high/low、最後一筆為 close、量累加。
   ticks.forEach((tick) => {
-    const key = step ? Math.floor(tick.time / step) * step : dateKeyFromUnix(tick.time);
-    let candle = buckets.get(key);
-    if (!candle) {
-      candle = {
-        time: key,
-        open: tick.price,
-        high: tick.price,
-        low: tick.price,
-        close: tick.price,
-        volume: 0
-      };
-      buckets.set(key, candle);
-    }
-
-    candle.high = Math.max(candle.high, tick.price);
-    candle.low = Math.min(candle.low, tick.price);
-    candle.close = tick.price;
-    candle.volume += tick.volume;
+    aggregateTickIntoCandleBuckets(buckets, tick, timeframe);
   });
 
-  return [...buckets.values()].sort((a, b) => sortTime(a.time, b.time));
+  return [...buckets.values()]
+    .map(({ firstTime, lastTime, ...candle }) => candle)
+    .sort((a, b) => sortTime(a.time, b.time));
 }
 
 // dateKeyFromUnix：函式用途註解，說明此處封裝一段可重用的流程。
@@ -545,9 +717,9 @@ function sortTime(a, b) {
 
 // generateFallbackCandles：函式用途註解，說明此處封裝一段可重用的流程。
 function generateFallbackCandles({ timeframe = 'D', base = 32000 }) {
-  const isIntraday = timeframe === '1m' || timeframe === '5m';
+  const isIntraday = isIntradayTimeframe(timeframe);
   const count = isIntraday ? 120 : 120;
-  const stepSeconds = timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : 86400;
+  const stepSeconds = isSecondTimeframe(timeframe) ? 1 : timeframe === '1m' ? 60 : timeframe === '5m' ? 300 : 86400;
   const now = Math.floor(Date.now() / 1000);
   const first = now - stepSeconds * count;
   const candles = [];
@@ -579,8 +751,57 @@ async function fetchCandles(options) {
   if (options.source === 'taifex') return fetchTaifexCandles(options);
   if (options.source === 'finmind') return fetchFinMindFuturesCandles(options);
   if (options.source === 'finmind_futures') return fetchFinMindFuturesCandles(options);
+  if (options.source === 'kgi_dde') {
+    return fetchBrokerCandles({
+      ...options,
+      brokerUrl: options.kgiDdeUrl || DEFAULT_KGI_DDE_URL
+    });
+  }
+  if (options.source === 'kgi_rtd') {
+    return fetchBrokerCandles({
+      ...options,
+      brokerUrl: options.kgiRtdUrl || DEFAULT_KGI_RTD_URL
+    });
+  }
+  if (options.source === 'taishin_dde') {
+    return fetchBrokerCandles({
+      ...options,
+      brokerUrl: options.taishinDdeUrl || DEFAULT_TAISHIN_DDE_URL
+    });
+  }
   if (options.source === 'broker') return fetchBrokerCandles(options);
   return fetchYahooCandles(options);
+}
+
+function isStrictLiveSource(source) {
+  return source === 'kgi_dde' || source === 'kgi_rtd' || source === 'taishin_dde';
+}
+
+function isDayFuturesSymbol(symbol, symbolConfig = {}) {
+  const value = String(symbol || '').toUpperCase();
+  return (
+    symbolConfig.session === 'day' ||
+    value === 'FITX*1' ||
+    value === 'FITX1' ||
+    value === 'TXDAY' ||
+    value === 'TX_DAY'
+  );
+}
+
+function ensureLiveDataSources(sources) {
+  const next = Array.isArray(sources) ? [...sources] : [];
+  REQUIRED_LIVE_DATA_SOURCES.forEach((item) => {
+    if (!next.some((source) => source.value === item.value)) next.push(item);
+  });
+  return next;
+}
+
+function shouldSkipLiveSpotRefresh(source, symbol) {
+  return isStrictLiveSource(source) && isTaiexIndexSymbol(symbol) && !isTaiexTradingTime();
+}
+
+function shouldSkipLiveDayFuturesRefresh(source, symbol, symbolConfig = {}) {
+  return isStrictLiveSource(source) && isDayFuturesSymbol(symbol, symbolConfig) && !isFuturesDayTradingTime();
 }
 
 // 建立圖表外殼：上方控制列、CSV 載入按鈕、圖表容器、左上 legend。
@@ -844,10 +1065,11 @@ function updateLastCandle(candleSeries, volumeSeries, smaSeries, candles, candle
 
 // toVolumePoint：函式用途註解，說明此處封裝一段可重用的流程。
 function toVolumePoint(candle) {
+  const alert = volumeAlertInfo(candle);
   return {
     time: candle.time,
     value: candle.volume || 0,
-    color: candle.close >= candle.open ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR
+    color: alert?.color || (candle.close >= candle.open ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR)
   };
 }
 
@@ -892,6 +1114,40 @@ function formatChartTime(time, timeframe = 'D') {
         hour12: false
       };
   return new Intl.DateTimeFormat('zh-TW', options).format(date);
+}
+
+function taipeiMinuteOfDay(time) {
+  if (time == null || typeof time === 'string') return null;
+  if (typeof time === 'object' && Number.isFinite(time.year)) return null;
+  const date = new Date(Number(time) * 1000);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Taipei',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+function volumeReferenceForTime(time) {
+  const minute = taipeiMinuteOfDay(time);
+  if (minute == null) return null;
+  const dayStart = 8 * 60 + 45;
+  const dayEnd = 13 * 60 + 45;
+  return minute >= dayStart && minute <= dayEnd
+    ? { label: '盤中量', value: DAY_VOLUME_REFERENCE, color: VOLUME_ALERT_DAY_COLOR }
+    : { label: '盤後量', value: AFTER_HOURS_VOLUME_REFERENCE, color: VOLUME_ALERT_AFTER_HOURS_COLOR };
+}
+
+function volumeAlertInfo(candle) {
+  const reference = volumeReferenceForTime(candle?.time);
+  const volume = Number(candle?.volume || 0);
+  if (!reference || !Number.isFinite(volume) || volume <= reference.value) return null;
+  return { ...reference, volume };
 }
 
 // chartTimeToUnix：函式用途註解，說明此處封裝一段可重用的流程。
@@ -981,20 +1237,25 @@ export async function mountMarketChart(container, options = {}) {
   const symbols = options.symbols || [
     { label: '加權指數', value: 'INDEX:TWII', source: 'yahoo' },
     { label: '台積電', value: '2330', source: 'yahoo' },
-    { label: '台指期', value: 'TXF', source: 'taifex', type: 'future' }
+    { label: '台指', value: 'FITX*1', source: 'taifex', type: 'future', session: 'day', productCodes: ['TX'], csvProductCodes: ['TX'], futuresId: 'TXF', dailyId: 'TX' },
+    { label: '台指(全)', value: 'FITXN*1', source: 'taifex', type: 'future', session: 'full', productCodes: ['TX'], csvProductCodes: ['TX'], futuresId: 'TXF', dailyId: 'TX' }
   ];
   const timeframes = options.timeframes || [
+    { label: '1S', value: '1s' },
     { label: '1m', value: '1m' },
     { label: '5m', value: '5m' },
     { label: '日K', value: 'D' }
   ];
-  const dataSources = options.dataSources || [
+  const dataSources = ensureLiveDataSources(options.dataSources || [
     { label: 'YAHOO', value: 'yahoo' },
     { label: 'FinMind期貨', value: 'finmind_futures' },
     { label: '期交所資料', value: 'taifex' },
     { label: '期交所CSV', value: 'taifex_csv' },
+    { label: '凱基DDE', value: 'kgi_dde' },
+    { label: '凱基RTD', value: 'kgi_rtd' },
+    { label: '台新DDE', value: 'taishin_dde' },
     { label: '券商API', value: 'broker' }
-  ];
+  ]);
   const indicators = options.indicators || [
     { label: '成交量 + SMA 9', value: 'volume_sma' },
     { label: '成交量', value: 'volume' },
@@ -1006,15 +1267,22 @@ export async function mountMarketChart(container, options = {}) {
   let activeTimeframe = options.timeframe || options.interval || 'D';
   let activeDataSource = options.getDataSource?.() || options.source || dataSources[0]?.value || 'yahoo';
   let activeIndicator = options.indicator || indicators[0]?.value || 'volume_sma';
+  const initialSymbolConfig = symbols.find((item) => item.value === activeSymbol);
+  if (isStrictLiveSource(activeDataSource) && initialSymbolConfig?.type !== 'future') {
+    const futureSymbol = symbols.find((item) => item.value === 'TX' || item.value === 'TXF' || item.type === 'future');
+    if (futureSymbol) activeSymbol = futureSymbol.value;
+  }
   let taifexCsvText = options.taifexCsvText || '';
   let taifexCsvName = '';
   let lastCandles = [];
+  let lastLoadedSymbol = null;
   let lastSmaData = [];
   let selectedCandle = null;
   let disposed = false;
   let timer = null;
   let closePriceLine = null;
   let smaPriceLine = null;
+  let indexOverlayLastFetchAt = 0;
 
   fillSelect(shell.symbolSelect, symbols, activeSymbol);
   fillSelect(shell.timeframeSelect, timeframes, activeTimeframe);
@@ -1035,7 +1303,7 @@ export async function mountMarketChart(container, options = {}) {
     localization: { locale: 'zh-TW' },
     timeScale: {
       timeVisible: true,
-      secondsVisible: activeTimeframe === '1m'
+      secondsVisible: isSecondTimeframe(activeTimeframe) || activeTimeframe === '1m'
     },
     rightPriceScale: {
       borderColor: 'rgba(120,140,180,.28)',
@@ -1062,6 +1330,14 @@ export async function mountMarketChart(container, options = {}) {
     title: `SMA ${SMA_PERIOD} close`
   });
 
+  const indexOverlaySeries = chart.addLineSeries({
+    color: '#f5c842',
+    lineWidth: 1,
+    lastValueVisible: true,
+    priceLineVisible: false,
+    title: '加權指數'
+  });
+
   const volumeSeries = chart.addHistogramSeries({
     priceFormat: { type: 'volume' },
     priceScaleId: '',
@@ -1069,6 +1345,22 @@ export async function mountMarketChart(container, options = {}) {
     priceLineVisible: true
   });
   volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+  volumeSeries.createPriceLine({
+    price: DAY_VOLUME_REFERENCE,
+    color: '#f5c842',
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle?.Dashed ?? 2,
+    axisLabelVisible: true,
+    title: `盤中量 ${DAY_VOLUME_REFERENCE}`
+  });
+  volumeSeries.createPriceLine({
+    price: AFTER_HOURS_VOLUME_REFERENCE,
+    color: '#82e0aa',
+    lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle?.Dashed ?? 2,
+    axisLabelVisible: true,
+    title: `盤後量 ${AFTER_HOURS_VOLUME_REFERENCE}`
+  });
 
   // hasVolumeIndicator：函式用途註解，說明此處封裝一段可重用的流程。
   function hasVolumeIndicator() {
@@ -1111,6 +1403,58 @@ export async function mountMarketChart(container, options = {}) {
     return dataSources.find((item) => item.value === activeDataSource) || { label: activeDataSource, value: activeDataSource };
   }
 
+  function brokerUrlForSource(source) {
+    if (source === 'kgi_dde') return options.kgiDdeUrl || DEFAULT_KGI_DDE_URL;
+    if (source === 'kgi_rtd') return options.kgiRtdUrl || DEFAULT_KGI_RTD_URL;
+    if (source === 'taishin_dde') return options.taishinDdeUrl || DEFAULT_TAISHIN_DDE_URL;
+    if (source === 'broker') return options.brokerUrl;
+    return '';
+  }
+
+  async function fetchIndexOverlayCandles() {
+    if (isStrictLiveSource(activeDataSource) && isTaiexTradingTime()) {
+      try {
+        return await fetchBrokerCandles({
+          brokerUrl: brokerUrlForSource(activeDataSource),
+          symbol: 'INDEX:TWII',
+          timeframe: activeTimeframe
+        });
+      } catch (error) {
+        console.warn('[marketChart] index overlay live refresh failed:', error);
+      }
+    }
+    return fetchYahooCandles({ symbol: 'INDEX:TWII', timeframe: activeTimeframe });
+  }
+
+  async function updateIndexOverlay({ force = false } = {}) {
+    const symbolConfig = activeSymbolConfig();
+    if (!isTaiexTradingTime() || isTaiexIndexSymbol(symbolConfig.value) || symbolConfig.type !== 'future') {
+      indexOverlaySeries.setData([]);
+      return;
+    }
+    const now = Date.now();
+    if (!force && now - indexOverlayLastFetchAt < 10000) return;
+    indexOverlayLastFetchAt = now;
+
+    try {
+      const candles = await fetchIndexOverlayCandles();
+      indexOverlaySeries.setData((candles || [])
+        .filter((row) => Number.isFinite(Number(row.close)))
+        .map((row) => ({ time: row.time, value: Number(row.close) })));
+    } catch (error) {
+      console.warn('[marketChart] index overlay refresh failed:', error);
+    }
+  }
+
+  function clearMainSeriesForSymbol(symbol) {
+    if (lastLoadedSymbol === symbol) return;
+    lastCandles = [];
+    selectedCandle = null;
+    lastSmaData = applyCandles(candleSeries, volumeSeries, smaSeries, lastCandles);
+    updateLegend();
+    syncPriceLines();
+  }
+
   function notifyDataUpdate(candles) {
     if (typeof options.onDataUpdate !== 'function' || !Array.isArray(candles) || !candles.length) return;
     const latest = candles.at(-1);
@@ -1128,11 +1472,22 @@ export async function mountMarketChart(container, options = {}) {
   }
 
   // csvProductCodes：函式用途註解，說明此處封裝一段可重用的流程。
-  function csvProductCodes() {
+  function activeProductCodes() {
     const symbolConfig = activeSymbolConfig();
-    if (Array.isArray(symbolConfig.csvProductCodes)) return symbolConfig.csvProductCodes;
-    if (symbolConfig.type === 'future' || symbolConfig.value === 'TXF' || symbolConfig.value === 'TX') return TAIEX_FUTURE_CODES;
-    return TAIEX_FUTURE_CODES;
+    const codes = symbolConfig.csvProductCodes || symbolConfig.productCodes || symbolConfig.taifexProductCodes;
+    if (Array.isArray(codes) && codes.length) return codes;
+    const code = symbolConfig.taifexProduct || symbolConfig.productCode || symbolConfig.product || symbolConfig.value;
+    return code ? [String(code).replace(/\.TW$/i, '').replace(/F$/i, '').toUpperCase()] : TAIEX_FUTURE_CODES;
+  }
+
+  function activeFuturesId() {
+    const symbolConfig = activeSymbolConfig();
+    return symbolConfig.finMindFuturesId || symbolConfig.futuresId || symbolConfig.taifexFuturesId || symbolConfig.value || 'TXF';
+  }
+
+  function activeDailyId() {
+    const symbolConfig = activeSymbolConfig();
+    return symbolConfig.finMindDailyId || symbolConfig.dailyId || symbolConfig.taifexDailyId || activeProductCodes()[0] || 'TX';
   }
 
   // CSV 模式才顯示載入按鈕；一般 API 來源不需要本機檔案。
@@ -1142,13 +1497,13 @@ export async function mountMarketChart(container, options = {}) {
     if (visible && !taifexCsvText) shell.status.textContent = '請載入CSV';
   }
 
-  // 切到 CSV 模式時自動改用期貨商品，避免拿加權指數去篩逐筆商品代號。
+  // 商品欄就是資料查詢變數；不要在切換來源時強制改商品。
   function useFutureSymbolForCsv() {
-    if (activeDataSource !== 'taifex_csv' && activeDataSource !== 'finmind_futures' && activeDataSource !== 'finmind') return;
-    // futureSymbol：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const futureSymbol = symbols.find((item) => item.value === 'TXF' || item.value === 'TX' || item.type === 'future');
-    if (!futureSymbol) return;
-    activeSymbol = futureSymbol.value;
+    const symbolConfig = activeSymbolConfig();
+    if (isStrictLiveSource(activeDataSource) && symbolConfig.type !== 'future') {
+      const futureSymbol = symbols.find((item) => item.value === 'TX' || item.value === 'TXF' || item.type === 'future');
+      if (futureSymbol) activeSymbol = futureSymbol.value;
+    }
     shell.symbolSelect.value = activeSymbol;
   }
 
@@ -1174,8 +1529,10 @@ export async function mountMarketChart(container, options = {}) {
     const selectedRow = selectedCandle
       ? `<div style="margin-top:4px;color:#f5c842;">選取時間 <span>${formatChartTime(selectedCandle.time, activeTimeframe)}</span></div>`
       : '';
+    const volumeAlert = volumeAlertInfo(candle);
+    const volumeAlertColor = volumeAlert?.color || '#dfe7f7';
     const volumeRow = hasVolumeIndicator()
-      ? `<div style="margin-top:4px;color:#dfe7f7;">成交量 <span style="color:#dfe7f7;">${formatVolume(candle.volume || 0)}</span></div>`
+      ? `<div style="margin-top:4px;color:#dfe7f7;">成交量 <span style="color:${volumeAlertColor};">${formatVolume(candle.volume || 0)}</span>${volumeAlert ? ` <span style="color:${volumeAlertColor};">超過${volumeAlert.label} ${formatVolume(volumeAlert.value)}</span>` : ''}</div>`
       : '';
     const smaRow = hasSmaIndicator()
       ? `<div style="margin-top:4px;color:#dfe7f7;">SMA ${SMA_PERIOD} close <span style="color:${SMA_COLOR};">${smaPoint ? formatPrice(smaPoint.value) : '--'}</span></div>`
@@ -1236,6 +1593,17 @@ export async function mountMarketChart(container, options = {}) {
   // 初次載入或切換商品/週期/資料來源時會走這裡。
   async function loadInitialData() {
     const symbolConfig = activeSymbolConfig();
+    if (shouldSkipLiveSpotRefresh(activeDataSource, symbolConfig.value)) {
+      shell.status.textContent = `${activeDataSourceConfig().label} 盤外不更新加權`;
+      await updateIndexOverlay({ force: true });
+      return;
+    }
+    if (shouldSkipLiveDayFuturesRefresh(activeDataSource, symbolConfig.value, symbolConfig)) {
+      shell.status.textContent = `${activeDataSourceConfig().label} 台指盤外不更新`;
+      clearMainSeriesForSymbol(symbolConfig.value);
+      await updateIndexOverlay({ force: true });
+      return;
+    }
     shell.status.textContent = '載入中';
     try {
       // fetchCandles 是資料來源分流的單一入口；不同來源回來後都會被轉成 OHLCV。
@@ -1246,9 +1614,15 @@ export async function mountMarketChart(container, options = {}) {
         timeframe: activeTimeframe,
         source: activeDataSource,
         taifexCsvText,
-        productCodes: csvProductCodes()
+        productCodes: activeProductCodes(),
+        futuresId: activeFuturesId(),
+        finMindFuturesId: activeFuturesId(),
+        dailyId: activeDailyId(),
+        finMindDailyId: activeDailyId(),
+        selectedProduct: symbolConfig
       });
       lastCandles = candles.length ? candles : generateFallbackCandles({ timeframe: activeTimeframe });
+      lastLoadedSymbol = symbolConfig.value;
       if (candles.length) notifyDataUpdate(lastCandles);
       selectedCandle = null;
       lastSmaData = applyCandles(candleSeries, volumeSeries, smaSeries, lastCandles);
@@ -1257,15 +1631,21 @@ export async function mountMarketChart(container, options = {}) {
       chart.timeScale().fitContent();
       updateLegend();
       syncPriceLines();
+      await updateIndexOverlay({ force: true });
       shell.status.textContent = activeDataSourceConfig().label;
     } catch (error) {
-      lastCandles = generateFallbackCandles({ timeframe: activeTimeframe });
+      lastCandles = isStrictLiveSource(activeDataSource)
+        ? []
+        : generateFallbackCandles({ timeframe: activeTimeframe });
       lastSmaData = applyCandles(candleSeries, volumeSeries, smaSeries, lastCandles);
       // 段落說明：自動縮放時間軸以顯示完整資料。
       chart.timeScale().fitContent();
       updateLegend();
       syncPriceLines();
-      shell.status.textContent = `使用模擬資料：${error.message}`;
+      await updateIndexOverlay({ force: true });
+      shell.status.textContent = isStrictLiveSource(activeDataSource)
+        ? `${activeDataSourceConfig().label}連線失敗：${error.message}`
+        : `使用模擬資料：${error.message}`;
     }
   }
 
@@ -1274,6 +1654,15 @@ export async function mountMarketChart(container, options = {}) {
     if (disposed) return;
     try {
       const symbolConfig = activeSymbolConfig();
+      if (shouldSkipLiveSpotRefresh(activeDataSource, symbolConfig.value)) {
+        shell.status.textContent = `${activeDataSourceConfig().label} 盤外不更新加權`;
+        return;
+      }
+      if (shouldSkipLiveDayFuturesRefresh(activeDataSource, symbolConfig.value, symbolConfig)) {
+        shell.status.textContent = `${activeDataSourceConfig().label} 台指盤外不更新`;
+        await updateIndexOverlay();
+        return;
+      }
       // 目前以簡單 polling 取得完整序列，再用最後一根更新畫面；
       // 之後若後端提供增量資料，只要替換這段取資料邏輯即可。
       const candles = await fetchCandles({
@@ -1283,15 +1672,22 @@ export async function mountMarketChart(container, options = {}) {
         timeframe: activeTimeframe,
         source: activeDataSource,
         taifexCsvText,
-        productCodes: csvProductCodes()
+        productCodes: activeProductCodes(),
+        futuresId: activeFuturesId(),
+        finMindFuturesId: activeFuturesId(),
+        dailyId: activeDailyId(),
+        finMindDailyId: activeDailyId(),
+        selectedProduct: symbolConfig
       });
       const latest = candles.at(-1);
       if (!latest) return;
       lastCandles = candles;
+      lastLoadedSymbol = symbolConfig.value;
       notifyDataUpdate(lastCandles);
       lastSmaData = updateLastCandle(candleSeries, volumeSeries, smaSeries, lastCandles, latest);
       updateLegend();
       syncPriceLines();
+      await updateIndexOverlay();
       shell.status.textContent = `更新 ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`;
     } catch (error) {
       shell.status.textContent = `更新失敗：${error.message}`;
@@ -1306,8 +1702,11 @@ export async function mountMarketChart(container, options = {}) {
       timer = null;
       return;
     }
-    // 段落說明：建立定時更新流程。
-    timer = setInterval(pollLatest, options.pollMs || 15000);
+    // 段落說明：tick 需要快速追價，其它週期維持外部設定的更新頻率。
+    const pollMs = (isSecondTimeframe(activeTimeframe) || (isStrictLiveSource(activeDataSource) && isIntradayTimeframe(activeTimeframe)))
+      ? 1000
+      : (options.pollMs || 15000);
+    timer = setInterval(pollLatest, pollMs);
   }
 
   async function setActiveDataSource(source, { notify = false, reload = true } = {}) {
@@ -1377,7 +1776,7 @@ export async function mountMarketChart(container, options = {}) {
     chart.applyOptions({
       timeScale: {
         timeVisible: true,
-        secondsVisible: activeTimeframe === '1m'
+        secondsVisible: isSecondTimeframe(activeTimeframe) || activeTimeframe === '1m'
       }
     });
     await loadInitialData();
@@ -1398,17 +1797,26 @@ export async function mountMarketChart(container, options = {}) {
   shell.csvInput.addEventListener('change', async () => {
     const file = shell.csvInput.files?.[0];
     if (!file) return;
-    taifexCsvText = await readFileText(file, 'big5');
-    taifexCsvName = file.name;
-    activeDataSource = '';
-    await setActiveDataSource('taifex_csv', { notify: true, reload: false });
-    useFutureSymbolForCsv();
-    syncCsvControls();
-    fitSelectToText(shell.dataSourceSelect);
-    fitSelectToText(shell.symbolSelect);
-    await loadInitialData();
-    restartPolling();
-    shell.status.textContent = `CSV：${taifexCsvName}`;
+    shell.status.textContent = `CSV讀取中：${file.name}`;
+    shell.csvButton.disabled = true;
+    try {
+      taifexCsvText = await readFileText(file, 'big5');
+      taifexCsvName = file.name;
+      activeDataSource = '';
+      await setActiveDataSource('taifex_csv', { notify: true, reload: false });
+      useFutureSymbolForCsv();
+      syncCsvControls();
+      fitSelectToText(shell.dataSourceSelect);
+      fitSelectToText(shell.symbolSelect);
+      await loadInitialData();
+      restartPolling();
+      shell.status.textContent = `CSV：${taifexCsvName}`;
+    } catch (error) {
+      shell.status.textContent = `CSV載入失敗：${error.message || error}`;
+    } finally {
+      shell.csvButton.disabled = false;
+      shell.csvInput.value = '';
+    }
   });
 
   // 段落說明：綁定使用者互動事件。

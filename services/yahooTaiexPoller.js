@@ -1,11 +1,14 @@
 // Yahoo ^TWII poller: fetches the latest Taiwan Weighted Index quote and writes it into store.taiex.
 import { store } from '../data/store.js';
 import { TAIEX_BY_CODE } from '../data/taiexWeightedConstituents.js';
+import { TW50_BY_CODE } from '../data/tw50Constituents.js';
+import { MID100_BY_CODE } from '../data/twMid100Constituents.js';
 import { getDashboardDataSource } from './dashboardDataSource.js';
 
 const YAHOO_TAIEX_SYMBOL = '^TWII';
 const PAGE1_STOCK_SYMBOLS = ['2330.TW', '2308.TW', '2317.TW', '2454.TW', '3711.TW', '2881.TW', '2382.TW', '2412.TW', '2882.TW', '2891.TW'];
-const PAGE6_MARKET_MAP_SYMBOLS = Object.values(TAIEX_BY_CODE)
+const MARKET_MAP_META_BY_CODE = buildMarketMapMetaByCode();
+const PAGE6_MARKET_MAP_SYMBOLS = Object.values(MARKET_MAP_META_BY_CODE)
   .sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0))
   .map((item) => `${item.code}.TW`);
 const DEFAULT_POLL_MS = 10000;
@@ -13,11 +16,49 @@ const ERROR_RETRY_MS = 30000;
 const LIVE_TTL_MS = 60000;
 const DEFAULT_PROXY_BASE = 'http://127.0.0.1:8787/api';
 const MAX_SYMBOLS_PER_REQUEST = 20;
+const QUOTE_CHUNK_CONCURRENCY = 4;
 
 let timer = null;
 let retryTimer = null;
 let inFlight = false;
+let inFlightPromise = null;
 let lastFetchAt = 0;
+
+function buildMarketMapMetaByCode() {
+  const map = new Map();
+
+  Object.values(TAIEX_BY_CODE).forEach((item) => {
+    map.set(item.code, { ...item });
+  });
+
+  Object.values(TW50_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code) || {};
+    map.set(item.code, {
+      ...existing,
+      code: item.code,
+      name: item.name || existing.name,
+      weightPct: existing.weightPct ?? item.weightPct,
+      tw50WeightPct: item.weightPct,
+      tw50Major: item.majorGroup,
+      isIn0050: true
+    });
+  });
+
+  Object.values(MID100_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code) || {};
+    map.set(item.code, {
+      ...existing,
+      code: item.code,
+      name: item.name || existing.name,
+      weightPct: existing.weightPct ?? item.weightPct,
+      mid100WeightPct: item.weightPct,
+      mid100Major: item.majorGroup,
+      isInMid100: true
+    });
+  });
+
+  return Object.fromEntries(map);
+}
 
 // yahooProxyUrl: builds a URL against the local/dev proxy instead of the Yahoo origin.
 function yahooProxyUrl(endpoint) {
@@ -76,6 +117,9 @@ function mapYahooStockQuote(raw, previous) {
   if (!Number.isFinite(price)) return null;
 
   const prevClose = Number(raw.regularMarketPreviousClose);
+  const open = Number(raw.regularMarketOpen);
+  const high = Number(raw.regularMarketDayHigh);
+  const low = Number(raw.regularMarketDayLow);
   const rawChange = Number(raw.regularMarketChange);
   const rawChangePct = Number(raw.regularMarketChangePercent);
   const calculatedChange = Number.isFinite(prevClose) ? price - prevClose : null;
@@ -88,6 +132,10 @@ function mapYahooStockQuote(raw, previous) {
   return {
     ...previous,
     price: +price.toFixed(2),
+    prevClose: Number.isFinite(prevClose) ? +prevClose.toFixed(2) : previous.prevClose,
+    open: Number.isFinite(open) ? +open.toFixed(2) : previous.open,
+    high: Number.isFinite(high) ? +high.toFixed(2) : previous.high,
+    low: Number.isFinite(low) ? +low.toFixed(2) : previous.low,
     change: Number.isFinite(change) ? +change.toFixed(2) : previous.change,
     changePct: Number.isFinite(changePct) ? +changePct.toFixed(2) : previous.changePct,
     volume: Number.isFinite(volume) ? volume : previous.volume,
@@ -103,6 +151,9 @@ function mapYahooMarketMapQuote(raw, previous, meta) {
   if (!Number.isFinite(price)) return null;
 
   const prevClose = Number(raw.regularMarketPreviousClose);
+  const open = Number(raw.regularMarketOpen);
+  const high = Number(raw.regularMarketDayHigh);
+  const low = Number(raw.regularMarketDayLow);
   const rawChangePct = Number(raw.regularMarketChangePercent);
   const changePct = Number.isFinite(rawChangePct)
     ? rawChangePct
@@ -120,9 +171,19 @@ function mapYahooMarketMapQuote(raw, previous, meta) {
     taiexWeightPct: meta.weightPct,
     taiexSector: meta.sector,
     yahooSector: meta.yahooSector,
+    tw50WeightPct: meta.tw50WeightPct ?? previous.tw50WeightPct,
+    tw50Major: meta.tw50Major ?? previous.tw50Major,
+    isIn0050: meta.isIn0050 ?? previous.isIn0050,
+    mid100WeightPct: meta.mid100WeightPct ?? previous.mid100WeightPct,
+    mid100Major: meta.mid100Major ?? previous.mid100Major,
+    isInMid100: meta.isInMid100 ?? previous.isInMid100,
     price: +price.toFixed(2),
+    prevClose: Number.isFinite(prevClose) ? +prevClose.toFixed(2) : previous.prevClose,
+    open: Number.isFinite(open) ? +open.toFixed(2) : previous.open,
+    high: Number.isFinite(high) ? +high.toFixed(2) : previous.high,
+    low: Number.isFinite(low) ? +low.toFixed(2) : previous.low,
     changePct: Number.isFinite(changePct) ? +changePct.toFixed(2) : previous.changePct,
-    change5d: Number.isFinite(previous.change5d) ? previous.change5d : 0,
+    change5d: null,
     volume: Number.isFinite(volume) ? volume : previous.volume,
     volRatio: Number.isFinite(volume) && Number.isFinite(avgVolume) && avgVolume > 0
       ? +(volume / avgVolume).toFixed(2)
@@ -151,7 +212,7 @@ function updateMarketMapFromQuotes(rawMap) {
   const previousByCode = new Map(previousRows.map((row) => [String(row.code), row]));
   let changed = false;
 
-  const next = Object.values(TAIEX_BY_CODE)
+  const next = Object.values(MARKET_MAP_META_BY_CODE)
     .sort((a, b) => (b.weightPct || 0) - (a.weightPct || 0))
     .map((meta) => {
       const previous = previousByCode.get(meta.code) || {
@@ -160,6 +221,15 @@ function updateMarketMapFromQuotes(rawMap) {
         sector: meta.yahooSector || meta.sector,
         subSector: meta.sector,
         marketCap: Math.max((meta.weightPct || 0.01) * 100, 1),
+        taiexWeightPct: meta.weightPct,
+        taiexSector: meta.sector,
+        yahooSector: meta.yahooSector,
+        tw50WeightPct: meta.tw50WeightPct,
+        tw50Major: meta.tw50Major,
+        isIn0050: meta.isIn0050,
+        mid100WeightPct: meta.mid100WeightPct,
+        mid100Major: meta.mid100Major,
+        isInMid100: meta.isInMid100,
         changePct: 0,
         change5d: 0,
         volume: null,
@@ -193,20 +263,32 @@ async function fetchYahooQuoteChunk(symbols) {
 // fetchYahooQuotes: performs proxy-backed Yahoo quote requests for the shared dashboard symbols.
 async function fetchYahooQuotes() {
   const symbols = [...new Set([YAHOO_TAIEX_SYMBOL, ...PAGE1_STOCK_SYMBOLS, ...PAGE6_MARKET_MAP_SYMBOLS])];
+  const chunks = [];
   const rawMap = new Map();
   const errors = [];
 
   for (let i = 0; i < symbols.length; i += MAX_SYMBOLS_PER_REQUEST) {
-    const chunk = symbols.slice(i, i + MAX_SYMBOLS_PER_REQUEST);
-    try {
-      const rows = await fetchYahooQuoteChunk(chunk);
-      rows.forEach((raw) => {
-        if (raw?.symbol) rawMap.set(raw.symbol, raw);
-      });
-    } catch (error) {
-      errors.push(error);
+    chunks.push(symbols.slice(i, i + MAX_SYMBOLS_PER_REQUEST));
+  }
+
+  let cursor = 0;
+  async function worker() {
+    while (cursor < chunks.length) {
+      const chunk = chunks[cursor];
+      cursor += 1;
+      try {
+        const rows = await fetchYahooQuoteChunk(chunk);
+        rows.forEach((raw) => {
+          if (raw?.symbol) rawMap.set(raw.symbol, raw);
+        });
+      } catch (error) {
+        errors.push(error);
+      }
     }
   }
+
+  const workerCount = Math.min(QUOTE_CHUNK_CONCURRENCY, chunks.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
 
   if (!rawMap.size && errors.length) throw errors[0];
   return rawMap;
@@ -215,12 +297,12 @@ async function fetchYahooQuotes() {
 // updateYahooTaiexOnce: guarded single update; skips duplicate concurrent requests.
 export async function updateYahooTaiexOnce({ force = false } = {}) {
   if (getDashboardDataSource() !== 'yahoo') return false;
-  if (inFlight) return false;
+  if (inFlight) return force && inFlightPromise ? inFlightPromise : false;
   const now = Date.now();
   if (!force && now - lastFetchAt < DEFAULT_POLL_MS - 500) return false;
 
   inFlight = true;
-  try {
+  inFlightPromise = (async () => {
     const rawMap = await fetchYahooQuotes();
     updateTopStocksFromQuotes(rawMap);
     updateMarketMapFromQuotes(rawMap);
@@ -234,8 +316,13 @@ export async function updateYahooTaiexOnce({ force = false } = {}) {
 
     lastFetchAt = now;
     return true;
+  })();
+
+  try {
+    return await inFlightPromise;
   } finally {
     inFlight = false;
+    inFlightPromise = null;
   }
 }
 
