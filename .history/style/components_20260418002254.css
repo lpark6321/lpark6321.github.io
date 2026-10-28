@@ -1,0 +1,53 @@
+﻿.panel {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card2);
+}
+.panel__badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.panel__title { font-size: 13px; font-weight: 700; margin: 0; }
+.panel__body { padding: 10px; }
+.metric-up { color: var(--red); }
+.metric-down { color: var(--green); }
+.metric-flat { color: var(--text2); }
+.badge { display: inline-block; padding: 2px 6px; border-radius: 12px; font-size: 11px; }
+.badge--high { background: rgba(240,58,95,.2); color: var(--red); border: 1px solid var(--red); }
+.badge--mid { background: rgba(245,200,66,.2); color: var(--gold); border: 1px solid var(--gold); }
+.badge--low { background: rgba(61,132,255,.2); color: var(--blue); border: 1px solid var(--blue); }
+.table-wrap { overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; font-size: 12px; text-align: left; }
+th { color: var(--text2); cursor: pointer; }
+.input, select, button {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--gold); }
+.flash-new { animation: flashBg 1s ease-out; }
+@keyframes flashBg {
+  from { background: rgba(245,200,66,.22); }
+  to { background: transparent; }
+}

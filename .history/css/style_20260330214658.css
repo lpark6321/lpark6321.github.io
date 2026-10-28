@@ -1,0 +1,27 @@
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Noto Sans';
+}
+
+\\ <h1 > ~ <h6 > 的標籤都以這個屬性修飾
+
+p.lead {
+    font-weight: 600;
+    color: black;
+}
+
+\\ <p > 標籤如果class屬性是”lead”都以這個屬性修飾
+
+#intro .jumbotron {
+    height: 70vh;
+}
+
+\\ 在id屬性為”intro”的標籤內，如果class屬性是” jumbotron”都以這個屬性修飾
+\\ id屬性通常就是用來特別指定某個物件用的像是，<div class=”row” id=”intro” >
+
+header nav a img {
+    width: 38px;
+}
+
+\\ 在<header > 標籤內的<nav > 標籤內的<a > 標籤內的<img > 標籤都以這個屬性修飾
+\\ 主要是想展示如何指定包在其他標籤內的標籤
+

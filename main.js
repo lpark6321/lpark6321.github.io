@@ -1,3 +1,4 @@
+// 應用程式進入點：初始化資料提供者、頁面路由、模擬資料與全域 UI。
 import { createMarketDataProvider } from './providers/index.js';
 
 const QUOTES = [
@@ -40,6 +41,7 @@ const elements = {
   taifexUrlInput: document.getElementById('taifex-url')
 };
 
+// formatPrice：函式用途註解，說明此處封裝一段可重用的流程。
 function formatPrice(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 'Data unavailable';
   const digits = value >= 100 ? 2 : value >= 1 ? 3 : 4;
@@ -49,6 +51,7 @@ function formatPrice(value) {
   });
 }
 
+// formatSigned：函式用途註解，說明此處封裝一段可重用的流程。
 function formatSigned(value, digits = 2) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 'Data unavailable';
   const sign = value > 0 ? '+' : '';
@@ -58,6 +61,7 @@ function formatSigned(value, digits = 2) {
   })}`;
 }
 
+// getDirection：函式用途註解，說明此處封裝一段可重用的流程。
 function getDirection(change) {
   if (typeof change !== 'number' || Number.isNaN(change)) return 'flat';
   if (change > 0) return 'up';
@@ -65,6 +69,7 @@ function getDirection(change) {
   return 'flat';
 }
 
+// getProviderOptions：函式用途註解，說明此處封裝一段可重用的流程。
 function getProviderOptions() {
   return {
     type: state.providerType,
@@ -76,6 +81,7 @@ function getProviderOptions() {
   };
 }
 
+// createProvider：函式用途註解，說明此處封裝一段可重用的流程。
 function createProvider() {
   state.provider = createMarketDataProvider(getProviderOptions());
   if (elements.providerName) {
@@ -86,6 +92,7 @@ function createProvider() {
   }
 }
 
+// createQuoteCard：函式用途註解，說明此處封裝一段可重用的流程。
 function createQuoteCard(quote) {
   if (!quote || typeof quote.price !== 'number') {
     return `
@@ -111,12 +118,18 @@ function createQuoteCard(quote) {
   `;
 }
 
+// renderUI：函式用途註解，說明此處封裝一段可重用的流程。
 function renderUI(data, options = {}) {
+  // records：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const records = Array.isArray(data) ? data : QUOTES.map((item) => ({ ...item }));
+  // major：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const major = records.filter((item) => QUOTES.find((quote) => quote.symbol === item.symbol)?.group === 'major');
+  // stocks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const stocks = records.filter((item) => QUOTES.find((quote) => quote.symbol === item.symbol)?.group === 'stocks');
 
+  // 段落說明：更新 DOM 內容。
   elements.majorGrid.innerHTML = major.map(createQuoteCard).join('');
+  // 段落說明：更新 DOM 內容。
   elements.stocksGrid.innerHTML = stocks.map(createQuoteCard).join('');
 
   if (options.error) {
@@ -129,12 +142,22 @@ function renderUI(data, options = {}) {
   elements.lastUpdated.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
 }
 
+// renderProviderFields：函式用途註解，說明此處封裝一段可重用的流程。
 function renderProviderFields() {
   elements.finmindTokenField?.classList.toggle('is-hidden', state.providerType !== 'finmind');
   elements.taifexUrlField?.classList.toggle('is-hidden', state.providerType !== 'taifex');
 }
 
+// setRefreshing：函式用途註解，說明此處封裝一段可重用的流程。
+function setRefreshing(isRefreshing) {
+  if (!elements.refreshButton) return;
+  elements.refreshButton.disabled = isRefreshing;
+  elements.refreshButton.textContent = isRefreshing ? 'Refreshing...' : 'Refresh now';
+}
+
+// scheduleRetry：函式用途註解，說明此處封裝一段可重用的流程。
 function scheduleRetry() {
+  // 段落說明：清除定時器，避免頁面卸載後繼續執行。
   clearInterval(state.intervalId);
   state.intervalId = null;
   clearTimeout(state.retryTimeoutId);
@@ -144,11 +167,18 @@ function scheduleRetry() {
   }, ERROR_RETRY_DELAY);
 }
 
+// fetchData：函式用途註解，說明此處封裝一段可重用的流程。
 async function fetchData(options = {}) {
   return state.provider.fetchQuotes(options);
 }
 
+// updateDashboard：函式用途註解，說明此處封裝一段可重用的流程。
 async function updateDashboard(options = {}) {
+  const isManualRefresh = options.force === true;
+  if (isManualRefresh) {
+    setRefreshing(true);
+  }
+
   try {
     clearTimeout(state.retryTimeoutId);
     state.retryTimeoutId = null;
@@ -156,30 +186,40 @@ async function updateDashboard(options = {}) {
     renderUI(result.data, { cached: result.cached });
   } catch (error) {
     console.error(`${state.provider.name} fetch failed:`, error);
+    // fallback：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const fallback = state.provider.getLastData() || QUOTES.map((item) => ({ symbol: item.symbol, name: item.name }));
     renderUI(fallback, { error: true });
     if (elements.providerNote) {
       elements.providerNote.textContent = `${state.provider.description} Error: ${error.message}`;
     }
     scheduleRetry();
+  } finally {
+    if (isManualRefresh) {
+      setRefreshing(false);
+    }
   }
 }
 
+// stopPolling：函式用途註解，說明此處封裝一段可重用的流程。
 function stopPolling() {
+  // 段落說明：清除定時器，避免頁面卸載後繼續執行。
   clearInterval(state.intervalId);
   state.intervalId = null;
   clearTimeout(state.retryTimeoutId);
   state.retryTimeoutId = null;
 }
 
+// startPolling：函式用途註解，說明此處封裝一段可重用的流程。
 function startPolling() {
   if (state.intervalId) return;
   updateDashboard();
+  // 段落說明：建立定時更新流程。
   state.intervalId = setInterval(() => {
     updateDashboard();
   }, POLL_INTERVAL);
 }
 
+// applyProvider：函式用途註解，說明此處封裝一段可重用的流程。
 function applyProvider(type) {
   state.providerType = type;
   stopPolling();
@@ -189,22 +229,26 @@ function applyProvider(type) {
   startPolling();
 }
 
+// 段落說明：綁定使用者互動事件。
 elements.providerSelect?.addEventListener('change', (event) => {
   applyProvider(event.target.value);
 });
 
+// 段落說明：綁定使用者互動事件。
 elements.finmindTokenInput?.addEventListener('change', () => {
   if (state.providerType === 'finmind') {
     applyProvider('finmind');
   }
 });
 
+// 段落說明：綁定使用者互動事件。
 elements.taifexUrlInput?.addEventListener('change', () => {
   if (state.providerType === 'taifex') {
     applyProvider('taifex');
   }
 });
 
+// 段落說明：綁定使用者互動事件。
 elements.refreshButton?.addEventListener('click', () => {
   updateDashboard({ force: true });
 });

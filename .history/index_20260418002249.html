@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Data Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Data Lab</p>
+        <h1>Taiwan Market Provider Playground</h1>
+        <p class="hero__copy">
+          Keep the original dashboard on the home page, and test alternative market data layers here.
+        </p>
+        <div class="hero__actions">
+          <a class="back-link" href="./index_hide.html">Back to Dashboard</a>
+        </div>
+      </div>
+      <div class="hero__meta">
+        <div class="status-pill" id="status-pill">Booting</div>
+        <div class="status-stack">
+          <span>Polling</span>
+          <strong>10 sec</strong>
+        </div>
+        <div class="status-stack">
+          <span>Provider</span>
+          <strong id="provider-name">Yahoo Finance</strong>
+        </div>
+      </div>
+    </header>
+
+    <section class="panel toolbar">
+      <div class="toolbar__row">
+        <label class="field">
+          <span>Provider</span>
+          <select id="provider-select">
+            <option value="yahoo">Yahoo Finance</option>
+            <option value="finmind">FinMind</option>
+            <option value="taifex">TAIFEX Daily Tick</option>
+          </select>
+        </label>
+        <label class="field field--wide is-hidden" id="finmind-token-field">
+          <span>FinMind Token</span>
+          <input id="finmind-token" type="password" placeholder="Bearer token for FinMind">
+        </label>
+        <label class="field field--wide is-hidden" id="taifex-url-field">
+          <span>TAIFEX Tick URL</span>
+          <input id="taifex-url" type="url" placeholder="CSV or JSON URL for a daily tick file">
+        </label>
+      </div>
+      <div class="toolbar__row toolbar__row--end">
+        <button class="refresh-button" id="refresh-button" type="button">Refresh now</button>
+      </div>
+      <div class="provider-note" id="provider-note"></div>
+    </section>
+
+    <main class="dashboard">
+      <section class="panel panel--spotlight">
+        <div class="panel__head">
+          <div>
+            <p class="panel__eyebrow">Market Overview</p>
+            <h2>Index and Futures</h2>
+          </div>
+          <div class="panel__timestamp">
+            <span>Last update</span>
+            <strong id="last-updated">--:--:--</strong>
+          </div>
+        </div>
+        <div class="quote-grid quote-grid--major" id="major-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <div>
+            <p class="panel__eyebrow">Weighted Leaders</p>
+            <h2>Top Weighted Stocks</h2>
+          </div>
+        </div>
+        <div class="quote-grid" id="stocks-grid"></div>
+      </section>
+    </main>
+
+    <section class="panel panel--notes">
+      <div class="panel__head">
+        <div>
+          <p class="panel__eyebrow">Notes</p>
+          <h2>Provider Notes</h2>
+        </div>
+      </div>
+      <ul class="notes-list">
+        <li>Yahoo uses a single unofficial batch quote request.</li>
+        <li>FinMind is structured as a swappable provider with official token support and mixed daily or intraday datasets.</li>
+        <li>TAIFEX daily tick support is prepared as an official-file parser path for hosted CSV or JSON exports.</li>
+      </ul>
+    </section>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

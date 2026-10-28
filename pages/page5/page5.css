@@ -1,2 +1,40 @@
-﻿.p5-grid { display:grid; grid-template-columns: 320px 1fr; gap:8px; }
-.p5-right { display:grid; grid-template-rows: 1fr auto; gap:8px; min-height:640px; }
+.p5-grid {
+  --p5-left-w: 320px;
+  display: grid;
+  grid-template-columns: minmax(260px, var(--p5-left-w)) 8px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.p5-main-splitter {
+  grid-column: 2;
+}
+
+#p5-filters {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.p5-right {
+  grid-column: 3;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+  min-height: 640px;
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .p5-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .p5-main-splitter {
+    display: none;
+  }
+
+  #p5-filters,
+  .p5-right {
+    grid-column: auto;
+  }
+}

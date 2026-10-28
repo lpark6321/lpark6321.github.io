@@ -2,26 +2,26 @@ h1, h2, h3, h4, h5, h6 {
     font-family: 'Noto Sans';
 }
 
-\\ <h1 > ~ <h6 > 的標籤都以這個屬性修飾
+\\ <h1 > ~ <h6 > 嚙踝蕭嚙踝蕭嚙課喉蕭嚙瘡嚙緻嚙踝蕭嚙豎性修對蕭
 
 p.lead {
     font-weight: 600;
     color: black;
 }
 
-\\ <p > 標籤如果class屬性是”lead”都以這個屬性修飾
+\\ <p > 嚙踝蕭嚙課如嚙瘦class嚙豎性是嚙踝蕭lead嚙踝蕭嚙踝蕭嚙瘡嚙緻嚙踝蕭嚙豎性修對蕭
 
 #intro .jumbotron {
     height: 70vh;
 }
 
-\\ 在id屬性為”intro”的標籤內，如果class屬性是” jumbotron”都以這個屬性修飾
-\\ id屬性通常就是用來特別指定某個物件用的像是，<div class=”row” id=”intro” >
+\\ 嚙箭id嚙豎性穿蕭嚙踝蕭intro嚙踝蕭嚙踝蕭嚙踝蕭嚙課歹蕭嚙璀嚙緘嚙瘦class嚙豎性是嚙踝蕭 jumbotron嚙踝蕭嚙踝蕭嚙瘡嚙緻嚙踝蕭嚙豎性修對蕭
+\\ id嚙豎性通嚙窯嚙瞇嚙瞌嚙諄來特嚙瞌嚙踝蕭嚙緩嚙磐嚙諉迎蕭嚙踝蕭峈嚙踝蕭嚙踝蕭O嚙璀<div class=嚙踝蕭row嚙踝蕭 id=嚙踝蕭intro嚙踝蕭 >
 
 header nav a img {
     width: 38px;
 }
 
-\\ 在<header > 標籤內的<nav > 標籤內的<a > 標籤內的<img > 標籤都以這個屬性修飾
-\\ 主要是想展示如何指定包在其他標籤內的標籤
+\\ 嚙箭<header > 嚙踝蕭嚙課歹蕭嚙踝蕭<nav > 嚙踝蕭嚙課歹蕭嚙踝蕭<a > 嚙踝蕭嚙課歹蕭嚙踝蕭<img > 嚙踝蕭嚙課喉蕭嚙瘡嚙緻嚙踝蕭嚙豎性修對蕭
+\\ 嚙瘩嚙緯嚙瞌嚙瞋嚙箠嚙豌如嚙踝蕭嚙踝蕭w嚙稽嚙箭嚙踝蕭L嚙踝蕭嚙課歹蕭嚙踝蕭嚙踝蕭嚙踝蕭
 
