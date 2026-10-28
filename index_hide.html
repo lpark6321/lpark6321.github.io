@@ -27,6 +27,12 @@
       </div>
       <div class="shell__actions">
         <a class="shell__link" href="./index.html">Data Lab</a>
+        <label class="shell-source" for="dashboard-data-source">
+          <span class="shell-source__label">資料來源</span>
+          <select class="shell-source__select" id="dashboard-data-source"></select>
+        </label>
+        <button class="shell-refresh" type="button" id="dashboard-manual-refresh">手動更新</button>
+        <span class="shell-source-status" id="dashboard-data-source-status"></span>
         <nav class="tabbar" aria-label="Pages">
           <button class="tabbar__tab" type="button" data-page="page1">PAGE 1 Futures Overview</button>
           <button class="tabbar__tab" type="button" data-page="page2">PAGE 2 Market Temperature</button>
@@ -42,10 +48,27 @@
   </div>
 
   <script type="module">
+    import {
+      DASHBOARD_DATA_SOURCES,
+      getDashboardDataSource,
+      getDashboardDataSourceLabel,
+      setDashboardDataSource,
+      subscribeDashboardDataSource
+    } from './services/dashboardDataSource.js';
     import { startPriceSimulator } from './services/priceSimulator.js';
+    import { startYahooTaiexPoller, updateYahooTaiexOnce } from './services/yahooTaiexPoller.js';
+    import { updateYahooGlobalIndicesOnce } from './services/yahooGlobalPoller.js';
 
     const app = document.getElementById('app');
     const tabs = [...document.querySelectorAll('.tabbar__tab')];
+    const dataSourceSelect = document.getElementById('dashboard-data-source');
+    const dataSourceStatus = document.getElementById('dashboard-data-source-status');
+    const manualRefreshButton = document.getElementById('dashboard-manual-refresh');
+    const yahooPollSeconds = 10;
+    let yahooCountdown = yahooPollSeconds;
+    let manualRefreshRunning = false;
+    let manualRefreshStatus = '';
+    let manualRefreshStatusTimer = null;
 
     const pageModules = {
       page1: () => import('./pages/page1/page1.js'),
@@ -57,7 +80,86 @@
       page7: () => import('./pages/page7/page7.js')
     };
 
+    function renderDataSourceControl(source = getDashboardDataSource()) {
+      dataSourceSelect.innerHTML = DASHBOARD_DATA_SOURCES
+        .map((item) => `<option value="${item.value}">${item.label}</option>`)
+        .join('');
+      dataSourceSelect.value = source;
+      const baseStatus = source === 'yahoo'
+        ? `全站共用：每 10 秒更新（${yahooCountdown}）`
+        : `全站共用：${getDashboardDataSourceLabel(source)}`;
+      dataSourceStatus.textContent = manualRefreshStatus
+        ? `${baseStatus}｜${manualRefreshStatus}`
+        : baseStatus;
+      manualRefreshButton.disabled = source !== 'yahoo' || manualRefreshRunning;
+      manualRefreshButton.textContent = manualRefreshRunning ? '更新中' : '手動更新';
+    }
+
+    function setManualRefreshStatus(message, clearDelay = 0) {
+      manualRefreshStatus = message;
+      clearTimeout(manualRefreshStatusTimer);
+      if (clearDelay > 0) {
+        manualRefreshStatusTimer = setTimeout(() => {
+          manualRefreshStatus = '';
+          renderDataSourceControl();
+        }, clearDelay);
+      }
+      renderDataSourceControl();
+    }
+
+    function resetYahooCountdown() {
+      yahooCountdown = yahooPollSeconds;
+      renderDataSourceControl();
+    }
+
+    function startYahooCountdown() {
+      setInterval(() => {
+        if (getDashboardDataSource() !== 'yahoo') return;
+        yahooCountdown = yahooCountdown <= 1 ? yahooPollSeconds : yahooCountdown - 1;
+        renderDataSourceControl();
+      }, 1000);
+    }
+
+    async function refreshYahooNow() {
+      if (manualRefreshRunning || getDashboardDataSource() !== 'yahoo') return;
+      manualRefreshRunning = true;
+      setManualRefreshStatus('手動更新中');
+      try {
+        const results = await Promise.allSettled([
+          updateYahooTaiexOnce({ force: true }),
+          updateYahooGlobalIndicesOnce({ force: true })
+        ]);
+        const rejected = results.find((item) => item.status === 'rejected');
+        if (rejected) throw rejected.reason;
+        const updated = results.some((item) => item.status === 'fulfilled' && item.value);
+        resetYahooCountdown();
+        setManualRefreshStatus(updated ? '手動更新完成' : '已同步最新更新', 1800);
+      } catch (error) {
+        console.warn('[dashboard] Yahoo refresh failed:', error);
+        setManualRefreshStatus('手動更新失敗', 2500);
+      } finally {
+        manualRefreshRunning = false;
+        renderDataSourceControl();
+      }
+    }
+
+    renderDataSourceControl();
+    dataSourceSelect.addEventListener('change', () => {
+      const source = setDashboardDataSource(dataSourceSelect.value);
+      resetYahooCountdown();
+      renderDataSourceControl(source);
+      if (source === 'yahoo') {
+        refreshYahooNow();
+      }
+    });
+
+    manualRefreshButton.addEventListener('click', refreshYahooNow);
+
+    subscribeDashboardDataSource((source) => renderDataSourceControl(source));
+
     startPriceSimulator();
+    startYahooTaiexPoller({ pollMs: 10000 });
+    startYahooCountdown();
 
     const loaded = new Map();
     let activePage = null;

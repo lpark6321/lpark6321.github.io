@@ -1,5 +1,7 @@
-﻿const listeners = new Map();
+// 全域資料 store：保存行情、篩選、自選股等狀態並提供訂閱更新。
+const listeners = new Map();
 
+// clone：函式用途註解，說明此處封裝一段可重用的流程。
 function clone(value) {
   if (typeof structuredClone === 'function') return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
@@ -24,6 +26,28 @@ const state = {
     prevClose: 32480,
     change: -73,
     changePct: -0.22
+  },
+  futuresDay: {
+    price: 32407,
+    open: 32649,
+    high: 32858,
+    low: 32282,
+    prevClose: 32480,
+    change: -73,
+    changePct: -0.22,
+    source: 'kgi_dde',
+    sourceSymbol: 'FITX*1'
+  },
+  futuresFull: {
+    price: 32407,
+    open: 32649,
+    high: 32858,
+    low: 32282,
+    prevClose: 32480,
+    change: -73,
+    changePct: -0.22,
+    source: 'kgi_dde',
+    sourceSymbol: 'FITXN*1'
   },
   sectors: [
     { name: '電子', upPct: 55, downPct: 30, flatPct: 15 },
@@ -143,6 +167,7 @@ const state = {
   ]
 };
 
+// emit：函式用途註解，說明此處封裝一段可重用的流程。
 function emit(key) {
   const set = listeners.get(key);
   if (!set) return;
@@ -151,16 +176,20 @@ function emit(key) {
 }
 
 export const store = {
+  // set：方法用途註解，處理此元件或類別的一段行為。
   set(key, value) {
     state[key] = value;
     emit(key);
   },
+  // get：方法用途註解，處理此元件或類別的一段行為。
   get(key) {
     return clone(state[key]);
   },
+  // subscribe：方法用途註解，處理此元件或類別的一段行為。
   subscribe(key, callback) {
     if (!listeners.has(key)) listeners.set(key, new Set());
     listeners.get(key).add(callback);
+    // 段落說明：回傳清理函式，供頁面卸載時釋放資源。
     return () => {
       const set = listeners.get(key);
       if (!set) return;
@@ -169,7 +198,6 @@ export const store = {
     };
   }
 };
-
 
 
 

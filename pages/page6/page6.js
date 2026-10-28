@@ -1,152 +1,302 @@
-﻿import { store } from '../../data/store.js';
-import { TreemapControls } from '../../components/TreemapControls.js';
+// Page6 台股市場地圖：掛載方塊圖/旭日圖控制列、提示框與明細面板。
+import { store } from '../../data/store.js';
+import { TW_STOCK_UNIVERSE } from '../../data/twStocks.js';
+import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
+import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
+import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
 import { TreemapCanvas } from '../../components/TreemapCanvas.js';
+import { TreemapControls } from '../../components/TreemapControls.js';
+import { TreemapTooltip } from '../../components/TreemapTooltip.js';
+import { TreemapDetail } from '../../components/TreemapDetail.js';
+import { SunburstChart } from '../../components/SunburstChart.js';
+import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
+import { bindHorizontalSplitter } from '../../services/splitter.js';
 
+// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
 let cleanup = () => {};
 
-const SECTORS = ['加權指數', '半導體', '金融', 'ETF', '航運', '傳產'];
+// buildPage6Universe：函式用途註解，說明此處封裝一段可重用的流程。
+function buildPage6Universe() {
+  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
 
-function normalizeSector(name) {
-  if (name.includes('半導')) return '半導體';
-  if (name.includes('金融')) return '金融';
-  if (name.includes('ETF')) return 'ETF';
-  if (name.includes('航')) return '航運';
-  return '傳產';
-}
+  Object.values(TW50_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isIn0050: true,
+        tw50WeightPct: item.weightPct,
+        tw50Major: item.majorGroup,
+        tw50Rank: item.rank,
+        syntheticConstituentOnly: false
+      });
+      return;
+    }
 
-function drawSectorPie(canvas, data, title) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width = Math.max(680, Math.floor(canvas.clientWidth));
-  const h = canvas.height = Math.max(480, Math.floor(canvas.clientHeight));
-  ctx.clearRect(0, 0, w, h);
-
-  if (!data.length) return;
-
-  const total = data.reduce((s, x) => s + x.marketCap, 0) || 1;
-  const sorted = [...data].sort((a, b) => b.marketCap - a.marketCap).map((x) => ({
-    label: `${x.code} ${x.name}`,
-    value: x.marketCap,
-    pct: (x.marketCap / total) * 100
-  }));
-
-  const major = sorted.filter((x) => x.pct >= 1);
-  const minor = sorted.filter((x) => x.pct < 1);
-  const merged = [...major];
-  if (minor.length) {
-    merged.push({
-      label: '其他',
-      value: minor.reduce((s, x) => s + x.value, 0),
-      pct: minor.reduce((s, x) => s + x.pct, 0)
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.majorGroup,
+      subSector: '台灣50',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isIn0050: true,
+      tw50WeightPct: item.weightPct,
+      tw50Major: item.majorGroup,
+      tw50Rank: item.rank,
+      syntheticConstituentOnly: true
     });
-  }
-
-  const cx = w * 0.33;
-  const cy = h * 0.52;
-  const r = Math.min(w, h) * 0.32;
-  const colors = ['#e74c3c', '#f1948a', '#c0392b', '#27ae60', '#82e0aa', '#2a3550', '#3d84ff', '#f5c842', '#95a5a6'];
-
-  let a = -Math.PI / 2;
-  merged.forEach((m, i) => {
-    const ang = (m.value / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, a, a + ang);
-    ctx.closePath();
-    ctx.fillStyle = colors[i % colors.length];
-    ctx.fill();
-    a += ang;
   });
 
-  ctx.fillStyle = '#dce4f5';
-  ctx.font = 'bold 18px Noto Sans TC';
-  ctx.fillText(`${title} 成分圓盤`, w * 0.63, 40);
-  ctx.font = '14px Noto Sans TC';
+  Object.values(MID100_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        isInMid100: true,
+        mid100WeightPct: item.weightPct,
+        mid100Major: item.majorGroup,
+        mid100Rank: item.rank,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
 
-  merged.slice(0, 20).forEach((m, i) => {
-    const y = 74 + i * 24;
-    ctx.fillStyle = colors[i % colors.length];
-    ctx.fillRect(w * 0.63, y - 12, 12, 12);
-    ctx.fillStyle = '#dce4f5';
-    ctx.fillText(`${m.label} ${m.pct.toFixed(2)}%`, w * 0.63 + 18, y - 2);
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: '中型100',
+      subSector: '中型100',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      isInMid100: true,
+      mid100WeightPct: item.weightPct,
+      mid100Major: item.majorGroup,
+      mid100Rank: item.rank,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  Object.values(TAIEX_BY_CODE).forEach((item) => {
+    const existing = map.get(item.code);
+    if (existing) {
+      map.set(item.code, {
+        ...existing,
+        name: item.name || existing.name,
+        yahooSector: item.yahooSector || existing.yahooSector,
+        taiexWeightPct: item.weightPct,
+        taiexSector: item.sector,
+        taiexRank: item.rank,
+        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
+      });
+      return;
+    }
+
+    map.set(item.code, {
+      code: item.code,
+      name: item.name,
+      sector: item.sector,
+      yahooSector: item.yahooSector || null,
+      subSector: '加權',
+      marketCap: Math.max(item.weightPct * 100, 1),
+      taiexWeightPct: item.weightPct,
+      taiexSector: item.sector,
+      taiexRank: item.rank,
+      syntheticConstituentOnly: true
+    });
+  });
+
+  return [...map.values()];
+}
+
+const PAGE6_UNIVERSE = buildPage6Universe();
+
+// mergeData：函式用途註解，說明此處封裝一段可重用的流程。
+function mergeData() {
+  // 靜態 universe 負責名稱、分類與權重；store.marketMap 只覆蓋即時價格、漲跌與量。
+  // 這樣 Page6 的版面比例不會因模擬報價缺資料而消失。
+  const marketRows = store.get('marketMap') || [];
+  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const liveRows = marketRows.filter((row) => row?.source === 'yahoo');
+  const map = new Map(liveRows.map((row) => [String(row.code), row]));
+
+  return PAGE6_UNIVERSE.map((stock) => {
+    const live = map.get(stock.code) || {};
+    const price = Number(live.price);
+    const changePct = Number(live.changePct);
+    const change5d = Number(live.change5d ?? live.fiveDayPct);
+    const volume = Number(live.volume ?? live.turnover);
+    const volRatio = Number(live.volRatio ?? live.volumeRatio);
+
+    return {
+      ...stock,
+      price: Number.isFinite(price) ? price : null,
+      changePct: Number.isFinite(changePct) ? changePct : 0,
+      change5d: Number.isFinite(change5d) ? change5d : 0,
+      volume: Number.isFinite(volume) ? volume : null,
+      volRatio: Number.isFinite(volRatio) ? volRatio : 1
+    };
   });
 }
 
+// mount：函式用途註解，說明此處封裝一段可重用的流程。
 export function mount(container) {
+  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 6｜台股市場地圖（Finviz 風格）</h2></div>
-    <div class="p6-grid">
-      <div class="p6-topbar panel"><div class="panel__body p6-topbar-body"><div id="p6-sectors" class="p6-sectors"></div><div id="p6-viewmode" class="p6-viewmode"><button id="p6-mode-map">方塊圖</button><button id="p6-mode-pie">圓盤圖</button></div></div></div>
-      <div id="p6-controls"></div>
-      <div class="panel p6-map-panel"><div class="panel__body"><div id="p6-map" class="p6-map-wrap"></div><div id="p6-pie" class="p6-pie-wrap"><canvas id="p6-pie-canvas" style="width:100%;height:100%"></canvas></div></div></div>
-      <div class="panel"><div class="panel__body p6-detail" id="p6-detail">點擊方塊查看個股資訊</div></div>
+    <div class="p6-layout" id="p6-layout">
+      <div class="p6-controls" id="p6-ctrl"></div>
+      <div class="p6-map" id="p6-map"></div>
+      <div class="grid-splitter-v p6-splitter" id="p6-split"></div>
+      <aside class="p6-detail" id="p6-detail" style="display:none"></aside>
     </div>
   `;
 
-  let settings = { groupBy: 'none', colorBy: 'changePct', sizeBy: 'marketCap', marketFilter: 'all', search: '' };
-  let mode = 'map';
-  let sector = '加權指數';
+  const layoutEl = container.querySelector('#p6-layout');
+  const mapEl = container.querySelector('#p6-map');
+  const detailEl = container.querySelector('#p6-detail');
 
-  const controls = new TreemapControls(container.querySelector('#p6-controls'), {
-    onChange: (next) => {
-      settings = next;
-      render();
+  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const readVar = (name, fallback) => {
+    const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
+    return Number.isFinite(value) ? value : fallback;
+  };
+
+  const stopDetailSplit = bindHorizontalSplitter(container.querySelector('#p6-split'), {
+    getValue: () => readVar('--p6-detail-w', 280),
+    setValue: (px) => layoutEl.style.setProperty('--p6-detail-w', `${px}px`),
+    min: 220,
+    max: 560,
+    deltaSign: -1
+  });
+
+  const tooltip = new TreemapTooltip();
+  const detail = new TreemapDetail(detailEl, {
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
+    onClose: () => layoutEl.classList.remove('detail-open')
+  });
+
+  let currentChart = null;
+  let quoteTimer = null;
+  const chartState = {
+    groupMode: 'sector',
+    colorMetric: 'changePct',
+    sizeMetric: 'marketCap'
+  };
+
+  // TreemapCanvas 與 SunburstChart 都實作 _onHover，所以 tooltip wiring 共用同一段。
+  // bindHoverCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const bindHoverCallbacks = (chart) => {
+    chart._onHover = (stock, event) => {
+      if (stock && event) tooltip.show(stock, event);
+      else tooltip.hide();
+    };
+  };
+
+  // bindTreemapCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const bindTreemapCallbacks = (treemap) => {
+    bindHoverCallbacks(treemap);
+
+    treemap._onClick = (stock) => {
+      detail.show(stock);
+      layoutEl.classList.add('detail-open');
+    };
+
+    treemap._onSectorClick = (sectorName) => {
+      if (sectorName) return;
+      detail.hide();
+    };
+  };
+
+  // createChart：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const createChart = (type) => {
+    // 切換方塊圖/旭日圖時先銷毀舊 Canvas，避免 ResizeObserver 和事件監聽殘留。
+    if (currentChart && typeof currentChart.destroy === 'function') {
+      currentChart.destroy();
+    }
+
+    // 段落說明：更新 DOM 內容。
+    mapEl.innerHTML = '';
+    detail.hide();
+    tooltip.hide();
+    // 段落說明：移除 DOM 節點或釋放畫面資源。
+    layoutEl.classList.remove('detail-open');
+
+    if (type === 'sunburst') {
+      currentChart = new SunburstChart(mapEl);
+      bindHoverCallbacks(currentChart);
+      return;
+    }
+
+    currentChart = new TreemapCanvas(mapEl);
+    bindTreemapCallbacks(currentChart);
+  };
+
+  // applyChartState：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const applyChartState = () => {
+    // 控制列狀態獨立保存，換圖形後可以重新套回目前分組、顏色與大小設定。
+    currentChart?.setGroupMode?.(chartState.groupMode);
+    currentChart?.setColorMetric?.(chartState.colorMetric);
+    currentChart?.setSizeMetric?.(chartState.sizeMetric);
+  };
+
+  createChart('treemap');
+  applyChartState();
+
+  const controls = new TreemapControls(container.querySelector('#p6-ctrl'), {
+    onGroupChange: (mode) => {
+      chartState.groupMode = mode;
+      currentChart?.setGroupMode?.(mode);
+    },
+    onColorChange: (metric) => {
+      chartState.colorMetric = metric;
+      currentChart?.setColorMetric?.(metric);
+    },
+    onSizeChange: (metric) => {
+      chartState.sizeMetric = metric;
+      currentChart?.setSizeMetric?.(metric);
+    },
+    onChartChange: (type) => {
+      createChart(type);
+      applyChartState();
+      currentChart?.update?.(mergeData());
     }
   });
 
-  const sectorWrap = container.querySelector('#p6-sectors');
-  sectorWrap.innerHTML = SECTORS.map((s) => `<button data-sector="${s}">${s}</button>`).join('');
-  sectorWrap.querySelectorAll('button').forEach((btn) => btn.addEventListener('click', () => {
-    sector = btn.dataset.sector;
-    sectorWrap.querySelectorAll('button').forEach((b) => b.classList.toggle('is-active', b === btn));
-    render();
-  }));
-  sectorWrap.querySelector('button')?.classList.add('is-active');
+  currentChart.update?.(mergeData());
 
-  const mapWrap = container.querySelector('#p6-map');
-  const pieWrap = container.querySelector('#p6-pie');
-  const pieCanvas = container.querySelector('#p6-pie-canvas');
-
-  const map = new TreemapCanvas(mapWrap, {
-    onClick: (hit) => {
-      container.querySelector('#p6-detail').textContent = `${hit.code} ${hit.name}｜${hit.sector}｜價 ${hit.price}｜漲跌 ${hit.changePct}%｜市值 ${hit.marketCap} 億`;
+  const refreshQuotes = async (force = false) => {
+    try {
+      await updateYahooTaiexOnce({ force });
+    } catch (error) {
+      console.warn('[page6] quote refresh failed:', error);
     }
+  };
+
+  refreshQuotes(true);
+  quoteTimer = setInterval(refreshQuotes, 10000);
+
+  // unsub：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
+  const unsub = store.subscribe('marketMap', () => {
+    currentChart?.update?.(mergeData());
   });
-
-  const setMode = (m) => {
-    mode = m;
-    mapWrap.style.display = mode === 'map' ? 'block' : 'none';
-    pieWrap.style.display = mode === 'pie' ? 'flex' : 'none';
-    render();
-  };
-
-  container.querySelector('#p6-mode-map').addEventListener('click', () => setMode('map'));
-  container.querySelector('#p6-mode-pie').addEventListener('click', () => setMode('pie'));
-
-  const filterData = () => {
-    let data = store.get('marketMap').map((x) => ({ ...x, sectorNorm: normalizeSector(x.sector) }));
-    if (settings.marketFilter !== 'all') data = data.filter((x) => x.market === settings.marketFilter);
-    if (sector !== '加權指數') data = data.filter((x) => x.sectorNorm === sector);
-    return data.sort((a, b) => b.marketCap - a.marketCap).slice(0, 180);
-  };
-
-  const render = () => {
-    const data = filterData();
-    if (mode === 'map') map.update(data, settings);
-    else drawSectorPie(pieCanvas, data, sector);
-  };
-
-  render();
-  const unsub = store.subscribe('marketMap', () => render());
 
   cleanup = () => {
     unsub();
+    if (quoteTimer) clearInterval(quoteTimer);
+    stopDetailSplit();
     controls.destroy();
-    map.destroy();
+    currentChart?.destroy?.();
+    tooltip.destroy();
+    detail.destroy();
   };
 
+  // 段落說明：回傳目前頁面的清理函式。
   return cleanup;
 }
 
+// unmount：函式用途註解，說明此處封裝一段可重用的流程。
 export function unmount() {
   cleanup();
   cleanup = () => {};

@@ -1,3 +1,61 @@
-﻿.p4-grid { display:grid; grid-template-rows: auto 1fr auto; gap:8px; }
-.p4-main { display:grid; grid-template-columns: 1fr 340px; gap:8px; min-height:420px; }
-.p4-resize { resize: both; overflow: auto; min-width: 280px; min-height: 220px; }
+.p4-grid {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  min-height: 0;
+}
+
+.p4-main {
+  --p4-right-w: 340px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8px minmax(260px, var(--p4-right-w));
+  gap: 8px;
+  min-height: 420px;
+  align-items: start;
+}
+
+.p4-main > * {
+  min-width: 0;
+}
+
+.p4-main-splitter {
+  grid-column: 2;
+}
+
+#p4-pl-panel {
+  grid-column: 1;
+}
+
+#p4-chain {
+  grid-column: 3;
+}
+
+.p4-resize {
+  resize: vertical;
+  overflow: auto;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 220px;
+}
+
+.p4-resize.is-collapsed {
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+}
+
+@media (max-width: 1280px) {
+  .p4-main {
+    grid-template-columns: 1fr;
+  }
+
+  .p4-main-splitter {
+    display: none;
+  }
+
+  #p4-pl-panel,
+  #p4-chain {
+    grid-column: auto;
+  }
+}

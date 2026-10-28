@@ -1,4 +1,5 @@
-﻿export const MARKET_SCHEDULES = {
+// 市場交易時間設定：提供各市場開收盤時段與倒數狀態判斷基礎資料。
+export const MARKET_SCHEDULES = {
   kospi: { tz: 'Asia/Seoul', open: '09:00', close: '15:30' },
   nikkei: { tz: 'Asia/Tokyo', open: '09:00', close: '15:30' },
   nasdaq: { tz: 'America/New_York', open: '09:30', close: '16:00' },
@@ -25,10 +26,12 @@
 const US_MARKETS = new Set(['nasdaq', 'sox', 'dow', 'sp500', 'vix']);
 let US_DST_MODE = 'auto';
 
+// setUsDstMode：函式用途註解，說明此處封裝一段可重用的流程。
 export function setUsDstMode(mode = 'auto') {
   US_DST_MODE = ['auto', 'on', 'off'].includes(mode) ? mode : 'auto';
 }
 
+// getSchedule：函式用途註解，說明此處封裝一段可重用的流程。
 function getSchedule(indexId) {
   const base = MARKET_SCHEDULES[indexId];
   if (!base) return null;
@@ -38,6 +41,7 @@ function getSchedule(indexId) {
   return { ...base, tz: 'Etc/GMT+5' };
 }
 
+// zonedParts：函式用途註解，說明此處封裝一段可重用的流程。
 function zonedParts(nowUTC, tz) {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
@@ -45,19 +49,23 @@ function zonedParts(nowUTC, tz) {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
     weekday: 'short'
   });
+  // parts：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const parts = Object.fromEntries(fmt.formatToParts(nowUTC).map((p) => [p.type, p.value]));
   return { hh: Number(parts.hour), mm: Number(parts.minute), wd: parts.weekday };
 }
 
+// minutesOf：函式用途註解，說明此處封裝一段可重用的流程。
 function minutesOf(time) {
   const [h, m] = time.split(':').map(Number);
   return h * 60 + m;
 }
 
+// isWeekend：函式用途註解，說明此處封裝一段可重用的流程。
 function isWeekend(weekday) {
   return weekday === 'Sat' || weekday === 'Sun';
 }
 
+// getMarketStatus：函式用途註解，說明此處封裝一段可重用的流程。
 export function getMarketStatus(indexId, nowUTC = new Date()) {
   const schedule = getSchedule(indexId);
   if (!schedule) return 'closed';
@@ -74,10 +82,12 @@ export function getMarketStatus(indexId, nowUTC = new Date()) {
   return 'closed';
 }
 
+// isMarketOpen：函式用途註解，說明此處封裝一段可重用的流程。
 export function isMarketOpen(indexId, nowUTC = new Date()) {
   return getMarketStatus(indexId, nowUTC) === 'open';
 }
 
+// getNextEvent：函式用途註解，說明此處封裝一段可重用的流程。
 export function getNextEvent(indexId, nowUTC = new Date()) {
   const schedule = getSchedule(indexId);
   if (!schedule) return null;
