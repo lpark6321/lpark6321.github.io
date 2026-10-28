@@ -6,6 +6,9 @@ export const DASHBOARD_DATA_SOURCES = [
   { value: 'mock', label: '模擬資料' },
   { value: 'finmind', label: 'FinMind' },
   { value: 'taifex_csv', label: '期交所CSV' },
+  { value: 'kgi_dde', label: '凱基DDE' },
+  { value: 'kgi_rtd', label: '凱基RTD' },
+  { value: 'taishin_dde', label: '台新DDE' },
   { value: 'broker', label: '券商API' }
 ];
 

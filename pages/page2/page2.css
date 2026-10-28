@@ -154,6 +154,16 @@
   padding: 6px;
 }
 
+.p2-pie-card.is-disabled {
+  opacity: 0.45;
+  filter: grayscale(1);
+  pointer-events: none;
+}
+
+.p2-pie-card.is-disabled canvas {
+  visibility: hidden;
+}
+
 .p2-pie-title {
   color: var(--gold);
   font-size: 14px;

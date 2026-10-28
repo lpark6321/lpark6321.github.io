@@ -12,8 +12,10 @@ export class Gauge {
       scaleMax: options.scaleMax ?? options.max ?? 160,
       zoneStart: options.zoneStart ?? 120,
       color: options.color || '#f03a5f',
+      baseAlpha: options.baseAlpha ?? 0.32,
       zoneColor: options.zoneColor || '#912942',
       titleColor: options.titleColor || options.color || '#f03a5f',
+      needleColor: options.needleColor || options.titleColor || options.color || '#f03a5f',
       title: options.title || '',
       width: options.width || 360,
       height: options.height || 210,
@@ -38,12 +40,16 @@ export class Gauge {
     const state = typeof payload === 'number'
       ? {
           value: payload,
+          activeValue: payload,
+          segmentValue: null,
           displayValue: payload,
           displayMax: this.options.scaleMax,
           title: this.options.title
         }
       : {
           value: Number(payload.value ?? 0),
+          activeValue: Number(payload.activeValue ?? payload.value ?? 0),
+          segmentValue: payload.segmentValue == null ? null : Number(payload.segmentValue),
           displayValue: Number(payload.displayValue ?? payload.value ?? 0),
           displayMax: Number(payload.displayMax ?? this.options.scaleMax),
           title: payload.title ?? this.options.title
@@ -81,12 +87,12 @@ export class Gauge {
     ctx.arc(cx, cy, innerR, endA, startA, true);
     ctx.closePath();
     ctx.fillStyle = this.options.color;
-    ctx.globalAlpha = 0.32;
+    ctx.globalAlpha = this.options.baseAlpha;
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Active bright arc (from 0 to current needle)
-    const activeEnd = this._valueToAngle(state.value);
+    // Active bright arc
+    const activeEnd = this._valueToAngle(state.activeValue);
     ctx.beginPath();
     ctx.arc(cx, cy, outerR, startA, activeEnd, false);
     ctx.arc(cx, cy, innerR, activeEnd, startA, true);
@@ -95,6 +101,18 @@ export class Gauge {
     ctx.globalAlpha = 0.92;
     ctx.fill();
     ctx.globalAlpha = 1;
+
+    if (Number.isFinite(state.segmentValue) && state.segmentValue > this.options.scaleMin) {
+      const segmentEnd = this._valueToAngle(state.segmentValue);
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, startA, segmentEnd, false);
+      ctx.arc(cx, cy, innerR, segmentEnd, startA, true);
+      ctx.closePath();
+      ctx.fillStyle = this.options.needleColor;
+      ctx.globalAlpha = 0.96;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     // Red zone from 120 to 160
     const zoneStartA = this._valueToAngle(this.options.zoneStart);
@@ -107,11 +125,12 @@ export class Gauge {
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Ticks every 20
+    // Ticks
     const { scaleMin, scaleMax, tickStep } = this.options;
+    const midValue = scaleMin + (scaleMax - scaleMin) / 2;
     for (let v = scaleMin; v <= scaleMax; v += tickStep) {
       const a = this._valueToAngle(v);
-      const major = v % 40 === 0;
+      const major = v === scaleMin || v === scaleMax || Math.abs(v - midValue) < tickStep / 2;
       const r1 = innerR - (major ? 14 : 9);
       const r2 = innerR - 2;
       const x1 = cx + Math.cos(a) * r1;
@@ -126,8 +145,8 @@ export class Gauge {
       ctx.stroke();
     }
 
-    // Labels at 0 / 80 / 160
-    [0, 80, 160].forEach((v) => {
+    // Labels at min / midpoint / max
+    [scaleMin, midValue, scaleMax].forEach((v) => {
       const a = this._valueToAngle(v);
       const tx = cx + Math.cos(a) * (innerR - 24);
       const ty = cy + Math.sin(a) * (innerR - 24);
@@ -135,7 +154,7 @@ export class Gauge {
       ctx.font = '700 11px "JetBrains Mono"';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(v), tx, ty);
+      ctx.fillText(String(Math.round(v)), tx, ty);
     });
 
     // Single needle (speedometer style)
@@ -154,7 +173,7 @@ export class Gauge {
     const rightX = baseCx + Math.cos(rightA) * halfWidth;
     const rightY = baseCy + Math.sin(rightA) * halfWidth;
 
-    ctx.fillStyle = this.options.titleColor;
+    ctx.fillStyle = this.options.needleColor;
     ctx.beginPath();
     ctx.moveTo(tipX, tipY);
     ctx.lineTo(leftX, leftY);
@@ -168,11 +187,12 @@ export class Gauge {
     ctx.fill();
 
     // Title and readout
-    ctx.fillStyle = this.options.titleColor;
     ctx.font = '700 34px "JetBrains Mono"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle = this.options.needleColor;
     ctx.fillText(String(Math.round(state.displayValue)), cx - 64, h - 18);
+    ctx.fillStyle = this.options.titleColor;
     ctx.fillText(String(Math.round(state.displayMax)), cx + 64, h - 18);
 
     ctx.font = '700 14px "Noto Sans TC"';

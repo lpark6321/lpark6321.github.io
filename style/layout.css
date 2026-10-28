@@ -91,6 +91,25 @@ body {
   line-height: 1.2;
   white-space: nowrap;
 }
+.shell-refresh {
+  min-height: 38px;
+  padding: 5px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 14px !important;
+  font-weight: 700;
+}
+.shell-refresh:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(245, 200, 66, 0.12);
+}
+.shell-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
 .shell__main {
   min-height: 0;
   padding: 8px;

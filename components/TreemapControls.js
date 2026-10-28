@@ -26,13 +26,13 @@ export class TreemapControls {
       <div class="tm-ctrl-group">
         <span class="tm-ctrl-label">顏色</span>
         <button class="tm-btn active" data-color="changePct">今日漲跌</button>
-        <button class="tm-btn" data-color="change5d">5日漲跌</button>
-        <button class="tm-btn" data-color="volRatio">量比</button>
+        <button class="tm-btn" data-color="change5d" disabled>5日漲跌</button>
+        <button class="tm-btn" data-color="volRatio" disabled>量比</button>
       </div>
       <div class="tm-ctrl-group">
         <span class="tm-ctrl-label">大小</span>
         <button class="tm-btn active" data-size="marketCap">市值</button>
-        <button class="tm-btn" data-size="volume">成交金額</button>
+        <button class="tm-btn" data-size="volume" disabled>成交金額</button>
       </div>
       <div class="tm-ctrl-group tm-ctrl-group--chart" style="margin-left:auto">
         <span class="tm-ctrl-label">圖形</span>
