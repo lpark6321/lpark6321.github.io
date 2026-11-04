@@ -1,24 +1,11 @@
 // 期交所每日逐筆資料提供者：解析逐筆資料並產出期貨行情。
+import { parseCsv } from '../services/csv.js';
 import { BaseMarketDataProvider } from './baseProvider.js';
 
-// parseCsv：函式用途註解，說明此處封裝一段可重用的流程。
-function parseCsv(text) {
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  if (lines.length < 2) return [];
-  // headers：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const headers = lines[0].split(',').map((item) => item.trim());
+const CONTRACT_KEYS = ['contract', 'Contract', 'contract_id', '商品代號'];
+const MONTH_KEYS = ['expiry', 'contract_month', '到期月份(週別)', '到期月份'];
+const PRICE_KEYS = ['price', 'Price', '成交價格', '成交價', 'match_price'];
 
-  return lines.slice(1).map((line) => {
-    // values：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const values = line.split(',').map((item) => item.trim());
-    return headers.reduce((record, header, index) => {
-      record[header] = values[index];
-      return record;
-    }, {});
-  });
-}
-
-// pickValue：函式用途註解，說明此處封裝一段可重用的流程。
 function pickValue(record, keys) {
   for (const key of keys) {
     if (record[key] !== undefined && record[key] !== '') {
@@ -28,9 +15,18 @@ function pickValue(record, keys) {
   return undefined;
 }
 
-// TaifexDailyTickProvider：類別用途註解，集中管理相關狀態與方法。
+// 只取台指期 TX（不含 MTX 小台），排除價差單（到期月份含 "/"），並只用最近月份。
+// 沒有商品欄位的檔案視為已是單一商品的逐筆資料。
+export function selectNearMonthTx(rows) {
+  if (!rows.some((row) => pickValue(row, CONTRACT_KEYS) !== undefined)) return rows;
+  const tx = rows.filter((row) => String(pickValue(row, CONTRACT_KEYS)).trim() === 'TX'
+    && !String(pickValue(row, MONTH_KEYS) ?? '').includes('/'));
+  const months = tx.map((row) => String(pickValue(row, MONTH_KEYS) ?? '').trim());
+  const nearMonth = months.filter(Boolean).sort()[0];
+  return nearMonth === undefined ? tx : tx.filter((row, index) => months[index] === nearMonth);
+}
+
 export class TaifexDailyTickProvider extends BaseMarketDataProvider {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(options) {
     super({
       type: 'taifex',
@@ -42,13 +38,12 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
     this.dataUrl = options.dataUrl || '';
   }
 
-  // requestRemoteData：方法用途註解，處理此元件或類別的一段行為。
+  // 期交所官網的逐筆檔是 zip 包的 Big5 CSV；瀏覽器以 UTF-8 解碼，必須先轉成 UTF-8 再放到可跨域讀取的位置。
   async requestRemoteData() {
     if (!this.dataUrl) {
       throw new Error('Provide a TAIFEX daily tick CSV or JSON URL first');
     }
 
-    // 段落說明：呼叫外部資料來源並等待回應。
     const response = await fetch(this.dataUrl, {
       method: 'GET',
       headers: {
@@ -70,16 +65,9 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
       throw new Error('TAIFEX daily tick payload is empty');
     }
 
-    // txRows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const txRows = rows.filter((row) => {
-      const contract = String(pickValue(row, ['contract', 'Contract', 'contract_id', '商品代號', '商品名稱']) || '');
-      return contract.includes('TX');
-    });
-
-    const latestRow = txRows.at(-1) || rows.at(-1);
-    const firstRow = txRows[0] || rows[0];
-    const latestPrice = Number(pickValue(latestRow, ['price', 'Price', '成交價格', '成交價', 'match_price']));
-    const firstPrice = Number(pickValue(firstRow, ['price', 'Price', '成交價格', '成交價', 'match_price']));
+    const txRows = selectNearMonthTx(rows);
+    const latestPrice = Number(txRows.length ? pickValue(txRows.at(-1), PRICE_KEYS) : NaN);
+    const firstPrice = Number(txRows.length ? pickValue(txRows[0], PRICE_KEYS) : NaN);
 
     const map = new Map();
     map.set('TXF=F', {
@@ -93,10 +81,5 @@ export class TaifexDailyTickProvider extends BaseMarketDataProvider {
     });
 
     return this.mergeRecords(map);
-  }
-
-  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
-  async fetchQuotes(options = {}) {
-    return this.withCache(options, () => this.requestRemoteData());
   }
 }

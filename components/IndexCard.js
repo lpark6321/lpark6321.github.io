@@ -1,12 +1,8 @@
-// 指數卡片元件：顯示指數價格、漲跌與迷你走勢。
+// 指數卡片元件（Page7）：建立一次，之後只改有變化的文字與顏色。走勢小圖的最後一點跟著現價移動；
+// 倒數與開收盤標籤由頁面共用的每秒計時器呼叫 tick() 更新；價格真的變了才閃一下。
 import { Sparkline } from './Sparkline.js';
-import { StatusCountdown } from './StatusCountdown.js';
 import { getMarketStatus, getNextEvent } from '../services/marketCalendar.js';
-
-// cls：函式用途註解，說明此處封裝一段可重用的流程。
-function cls(num) {
-  return num >= 0 ? 'metric-up' : 'metric-down';
-}
+import { fmtPct, hasValue, orDash } from '../services/quoteUtils.js';
 
 const STATUS_TEXT = {
   open: '開盤中',
@@ -15,66 +11,106 @@ const STATUS_TEXT = {
   after: '盤後'
 };
 
-// IndexCard：類別用途註解，集中管理相關狀態與方法。
+function tone(value) {
+  if (!hasValue(value)) return '';
+  return value >= 0 ? 'metric-up' : 'metric-down';
+}
+
+function toHMS(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60].map((v) => String(v).padStart(2, '0')).join(':');
+}
+
 export class IndexCard {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
-    // 段落說明：建立新的 DOM 節點。
     this.root = document.createElement('article');
-    this.root.className = 'panel';
-    // 段落說明：更新 DOM 內容。
+    this.root.className = 'panel index-card';
     this.root.innerHTML = `
       <div class="panel__body">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="index-card__head">
           <div>
-            <div class="title" style="font-weight:700"></div>
-            <div class="sub" style="font-size:12px;color:var(--text2)"></div>
+            <div class="index-card__title"></div>
+            <div class="index-card__sub"></div>
           </div>
           <span class="badge status"></span>
         </div>
-        <div class="price" style="font-size:28px;font-family:var(--font-mono);margin-top:6px"></div>
-        <div class="chg" style="margin:4px 0 6px"></div>
-        <div class="spark"></div>
-        <div class="timer" style="margin-top:6px;font-size:12px"></div>
-        <div class="ohlc" style="margin-top:6px;font-size:12px;color:var(--text2)"></div>
+        <div class="index-card__price"></div>
+        <div class="index-card__chg"></div>
+        <div class="index-card__spark"></div>
+        <div class="index-card__timer"></div>
+        <div class="index-card__ohlc"></div>
       </div>
     `;
-    this.spark = new Sparkline(this.root.querySelector('.spark'), { width: 220, height: 44, color: 'rgb(240,58,95)' });
-    this.countdown = new StatusCountdown(this.root.querySelector('.timer'));
-    // 段落說明：將建立好的節點掛回頁面。
+    const $ = (selector) => this.root.querySelector(selector);
+    this.el = {
+      title: $('.index-card__title'),
+      sub: $('.index-card__sub'),
+      status: $('.status'),
+      price: $('.index-card__price'),
+      chg: $('.index-card__chg'),
+      timer: $('.index-card__timer'),
+      ohlc: $('.index-card__ohlc')
+    };
+    this.spark = new Sparkline($('.index-card__spark'), { width: 220, height: 44, color: 'rgb(240,58,95)' });
+    this.id = options.data?.id;
+    this.last = {};
     container.appendChild(this.root);
     this.update(options.data || null);
+    this.tick();
   }
 
-  // update：方法用途註解，處理此元件或類別的一段行為。
+  // 只在值改變時寫 DOM。
+  setText(key, text, className) {
+    if (this.last[key] === text && this.last[`${key}Class`] === className) return;
+    this.last[key] = text;
+    this.last[`${key}Class`] = className;
+    this.el[key].textContent = text;
+    if (className !== undefined) this.el[key].className = className;
+  }
+
   update(data) {
     if (!data) return;
-    const status = getMarketStatus(data.id, new Date());
-    const next = getNextEvent(data.id, new Date());
-    const up = data.changePct >= 0;
-    this.root.querySelector('.title').textContent = `${data.flag} ${data.name}`;
-    this.root.querySelector('.sub').textContent = data.fullName;
-    const badge = this.root.querySelector('.status');
-    badge.textContent = STATUS_TEXT[status] || status;
-    badge.className = `badge status ${status === 'open' ? 'badge--high' : 'badge--low'}`;
+    this.data = data;
+    this.setText('title', `${data.flag} ${data.name}`);
+    this.setText('sub', data.fullName);
 
-    this.root.querySelector('.price').textContent = data.price;
-    this.root.querySelector('.price').className = `price ${cls(data.changePct)}`;
-    this.root.querySelector('.chg').textContent = `${data.change >= 0 ? '+' : ''}${data.change} (${data.changePct >= 0 ? '+' : ''}${data.changePct}%)`;
-    this.root.querySelector('.chg').className = `chg ${cls(data.changePct)}`;
+    const priceChanged = hasValue(this.last.priceValue) && hasValue(data.price) && this.last.priceValue !== data.price;
+    this.last.priceValue = data.price;
+    this.setText('price', String(orDash(data.price)), `index-card__price ${tone(data.changePct)}`);
+    const chg = hasValue(data.change) ? `${data.change >= 0 ? '+' : ''}${data.change} (${fmtPct(data.changePct)})` : '--';
+    this.setText('chg', chg, `index-card__chg ${tone(data.changePct)}`);
+    this.setText('ohlc', `O ${orDash(data.open)} H ${orDash(data.high)} L ${orDash(data.low)}`);
 
-    this.spark.options.color = up ? 'rgb(240,58,95)' : 'rgb(31,214,122)';
-    this.spark.update(data.sparkline || [], data.prevClose);
+    // 5 分 K 走勢每分鐘才換一次，期間讓最後一點跟著現價走；序列沒變就不重畫。
+    const series = Array.isArray(data.sparkline) && data.sparkline.length && hasValue(data.price)
+      ? [...data.sparkline.slice(0, -1), Number(data.price)]
+      : [];
+    const seriesKey = `${series.length}|${series[0]}|${series.at(-1)}|${tone(data.changePct)}`;
+    if (seriesKey !== this.last.seriesKey) {
+      this.last.seriesKey = seriesKey;
+      this.spark.options.color = data.changePct >= 0 ? 'rgb(240,58,95)' : 'rgb(31,214,122)';
+      this.spark.update(series, hasValue(data.prevClose) ? data.prevClose : null);
+    }
 
-    this.root.querySelector('.ohlc').textContent = `O ${data.open} H ${data.high} L ${data.low}`;
-    if (next?.utcTime) this.countdown.update(next.utcTime);
+    if (priceChanged) {
+      this.root.classList.remove('flash-new');
+      void this.root.offsetWidth; // 重新觸發動畫
+      this.root.classList.add('flash-new');
+    }
   }
 
-  // destroy：方法用途註解，處理此元件或類別的一段行為。
+  // 由頁面每秒呼叫：倒數文字每次更新，開收盤標籤只在狀態改變時才改。
+  tick(now = new Date()) {
+    if (!this.id) return;
+    const status = getMarketStatus(this.id, now);
+    this.setText('status', STATUS_TEXT[status] || status, `badge status ${status === 'open' ? 'badge--high' : 'badge--low'}`);
+    const next = getNextEvent(this.id, now);
+    const left = next?.utcTime ? next.utcTime - now : NaN;
+    this.setText('timer', Number.isFinite(left) ? toHMS(left) : '', `index-card__timer ${left <= 300000 ? 'is-soon' : ''}`);
+  }
+
   destroy() {
-    this.countdown.destroy();
     this.spark.destroy();
-    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.root.remove();
   }
 }

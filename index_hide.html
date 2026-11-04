@@ -31,6 +31,10 @@
           <span class="shell-source__label">資料來源</span>
           <select class="shell-source__select" id="dashboard-data-source"></select>
         </label>
+        <label class="shell-source" for="dashboard-poll-interval">
+          <span class="shell-source__label">更新頻率</span>
+          <select class="shell-source__select" id="dashboard-poll-interval"></select>
+        </label>
         <button class="shell-refresh" type="button" id="dashboard-manual-refresh">手動更新</button>
         <span class="shell-source-status" id="dashboard-data-source-status"></span>
         <nav class="tabbar" aria-label="Pages">
@@ -50,25 +54,31 @@
   <script type="module">
     import {
       DASHBOARD_DATA_SOURCES,
+      POLL_INTERVAL_OPTIONS,
       getDashboardDataSource,
       getDashboardDataSourceLabel,
+      getPollIntervalSeconds,
       setDashboardDataSource,
-      subscribeDashboardDataSource
+      setPollIntervalSeconds,
+      sourceInfo,
+      subscribeDashboardDataSource,
+      subscribePollInterval
     } from './services/dashboardDataSource.js';
-    import { startPriceSimulator } from './services/priceSimulator.js';
-    import { startYahooTaiexPoller, updateYahooTaiexOnce } from './services/yahooTaiexPoller.js';
-    import { updateYahooGlobalIndicesOnce } from './services/yahooGlobalPoller.js';
+    import { store } from './data/store.js';
+    import { esc } from './services/html.js';
+    import { isTwQuoteSession } from './services/marketCalendar.js';
+    import { refreshMarketFeed, startMarketFeed } from './services/marketFeed.js';
 
     const app = document.getElementById('app');
     const tabs = [...document.querySelectorAll('.tabbar__tab')];
     const dataSourceSelect = document.getElementById('dashboard-data-source');
+    const pollSelect = document.getElementById('dashboard-poll-interval');
     const dataSourceStatus = document.getElementById('dashboard-data-source-status');
     const manualRefreshButton = document.getElementById('dashboard-manual-refresh');
-    const yahooPollSeconds = 10;
-    let yahooCountdown = yahooPollSeconds;
     let manualRefreshRunning = false;
     let manualRefreshStatus = '';
     let manualRefreshStatusTimer = null;
+    let lastUpdatedAt = NaN;
 
     const pageModules = {
       page1: () => import('./pages/page1/page1.js'),
@@ -80,18 +90,28 @@
       page7: () => import('./pages/page7/page7.js')
     };
 
-    function renderDataSourceControl(source = getDashboardDataSource()) {
-      dataSourceSelect.innerHTML = DASHBOARD_DATA_SOURCES
-        .map((item) => `<option value="${item.value}">${item.label}</option>`)
-        .join('');
+    // 選項只建一次；之後只改選取值，避免重繪時把使用者正打開的下拉選單整個換掉。
+    dataSourceSelect.innerHTML = DASHBOARD_DATA_SOURCES
+      .map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`)
+      .join('');
+    pollSelect.innerHTML = POLL_INTERVAL_OPTIONS
+      .map((seconds) => `<option value="${seconds}">${seconds} 秒</option>`)
+      .join('');
+
+    function renderDataSourceControl() {
+      const source = getDashboardDataSource();
       dataSourceSelect.value = source;
-      const baseStatus = source === 'yahoo'
-        ? `全站共用：每 10 秒更新（${yahooCountdown}）`
-        : `全站共用：${getDashboardDataSourceLabel(source)}`;
-      dataSourceStatus.textContent = manualRefreshStatus
-        ? `${baseStatus}｜${manualRefreshStatus}`
-        : baseStatus;
-      manualRefreshButton.disabled = source !== 'yahoo' || manualRefreshRunning;
+      pollSelect.value = String(getPollIntervalSeconds());
+      let status = `全站共用：${getDashboardDataSourceLabel(source)}`;
+      if (sourceInfo(source).feed) {
+        const paused = source === 'yahoo' && !isTwQuoteSession() ? '（台股非交易時段暫停）' : '';
+        const updated = Number.isFinite(lastUpdatedAt)
+          ? `最後更新 ${new Date(lastUpdatedAt).toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}`
+          : '尚未更新';
+        status = `每 ${getPollIntervalSeconds()} 秒更新${paused}｜${updated}`;
+      }
+      dataSourceStatus.textContent = manualRefreshStatus ? `${status}｜${manualRefreshStatus}` : status;
+      manualRefreshButton.disabled = !sourceInfo(source).feed || manualRefreshRunning;
       manualRefreshButton.textContent = manualRefreshRunning ? '更新中' : '手動更新';
     }
 
@@ -107,63 +127,40 @@
       renderDataSourceControl();
     }
 
-    function resetYahooCountdown() {
-      yahooCountdown = yahooPollSeconds;
-      renderDataSourceControl();
-    }
-
-    function startYahooCountdown() {
-      setInterval(() => {
-        if (getDashboardDataSource() !== 'yahoo') return;
-        yahooCountdown = yahooCountdown <= 1 ? yahooPollSeconds : yahooCountdown - 1;
-        renderDataSourceControl();
-      }, 1000);
-    }
-
-    async function refreshYahooNow() {
-      if (manualRefreshRunning || getDashboardDataSource() !== 'yahoo') return;
+    // 切換來源時 marketFeed 會自己立刻抓一輪；這個按鈕只是不等下一個節拍。
+    async function refreshNow() {
+      if (manualRefreshRunning || !sourceInfo().feed) return;
       manualRefreshRunning = true;
       setManualRefreshStatus('手動更新中');
-      try {
-        const results = await Promise.allSettled([
-          updateYahooTaiexOnce({ force: true }),
-          updateYahooGlobalIndicesOnce({ force: true })
-        ]);
-        const rejected = results.find((item) => item.status === 'rejected');
-        if (rejected) throw rejected.reason;
-        const updated = results.some((item) => item.status === 'fulfilled' && item.value);
-        resetYahooCountdown();
-        setManualRefreshStatus(updated ? '手動更新完成' : '已同步最新更新', 1800);
-      } catch (error) {
-        console.warn('[dashboard] Yahoo refresh failed:', error);
-        setManualRefreshStatus('手動更新失敗', 2500);
-      } finally {
-        manualRefreshRunning = false;
-        renderDataSourceControl();
-      }
+      const ok = await refreshMarketFeed();
+      manualRefreshRunning = false;
+      setManualRefreshStatus(ok ? '手動更新完成' : '手動更新失敗', ok ? 1800 : 2500);
     }
 
+    dataSourceSelect.addEventListener('change', () => setDashboardDataSource(dataSourceSelect.value));
+    pollSelect.addEventListener('change', () => setPollIntervalSeconds(pollSelect.value));
+    manualRefreshButton.addEventListener('click', refreshNow);
+
+    subscribeDashboardDataSource(renderDataSourceControl);
+    subscribePollInterval(renderDataSourceControl);
+    // 「最後更新」取所有行情裡最新的一筆（DDE 收盤後只有期貨在更新，不能只看加權）；切換來源清空後回到「尚未更新」。
+    const UPDATE_KEYS = ['taiex', 'futuresDay', 'futuresFull', 'topStocks', 'globalIndices'];
+    const updatedAt = (value) => (Array.isArray(value)
+      ? Math.max(0, ...value.map((row) => row.sourceUpdatedAt || 0))
+      : value?.sourceUpdatedAt || 0);
+    UPDATE_KEYS.forEach((key) => store.subscribe(key, () => {
+      lastUpdatedAt = Math.max(...UPDATE_KEYS.map((k) => updatedAt(store.get(k)))) || NaN;
+      renderDataSourceControl();
+    }));
+    // 每分鐘重繪一次，讓「非交易時段暫停」在開收盤時自動切換。
+    setInterval(renderDataSourceControl, 60000);
     renderDataSourceControl();
-    dataSourceSelect.addEventListener('change', () => {
-      const source = setDashboardDataSource(dataSourceSelect.value);
-      resetYahooCountdown();
-      renderDataSourceControl(source);
-      if (source === 'yahoo') {
-        refreshYahooNow();
-      }
-    });
 
-    manualRefreshButton.addEventListener('click', refreshYahooNow);
+    startMarketFeed();
 
-    subscribeDashboardDataSource((source) => renderDataSourceControl(source));
-
-    startPriceSimulator();
-    startYahooTaiexPoller({ pollMs: 10000 });
-    startYahooCountdown();
-
-    const loaded = new Map();
     let activePage = null;
     let activeUnmount = null;
+    let navigationSeq = 0;
 
     function setActiveTab(page) {
       tabs.forEach((tab) => {
@@ -178,19 +175,17 @@
       return key in pageModules ? key : 'page1';
     }
 
-    async function loadPage(page) {
-      if (!loaded.has(page)) {
-        loaded.set(page, await pageModules[page]());
-      }
-      return loaded.get(page);
-    }
-
     async function navigate(page, { pushHash = true } = {}) {
       if (page === activePage) return;
+      const seq = ++navigationSeq;
 
-      if (typeof activeUnmount === 'function') {
-        activeUnmount();
-        activeUnmount = null;
+      const unmount = activeUnmount;
+      activeUnmount = null;
+      try {
+        if (typeof unmount === 'function') unmount();
+      } catch (err) {
+        // 前一頁清理失敗也要能切頁，否則會一直卡在同一頁。
+        console.error(err);
       }
 
       app.innerHTML = '';
@@ -198,7 +193,9 @@
       setActiveTab(page);
 
       try {
-        const mod = await loadPage(page);
+        const mod = await pageModules[page]();
+        // 模組載入期間使用者又切了頁：放棄這次掛載，否則兩頁會疊在一起且前一頁的清理函式遺失。
+        if (seq !== navigationSeq) return;
         if (typeof mod.mount !== 'function') {
           throw new Error(`${page} is missing mount()`);
         }
@@ -208,7 +205,9 @@
         activeUnmount = mod.mount(app) || null;
       } catch (err) {
         console.error(err);
-        app.innerHTML = `<section class="panel"><div class="panel__body">Failed to load ${page}</div></section>`;
+        if (seq === navigationSeq) {
+          app.innerHTML = `<section class="panel"><div class="panel__body">Failed to load ${esc(page)}</div></section>`;
+        }
       }
     }
 

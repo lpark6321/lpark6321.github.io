@@ -59,3 +59,7 @@
     grid-column: auto;
   }
 }
+
+/* 選擇權鏈：價格格子可點（點賣價買進、點買價賣出） */
+.chain-table td.chain-pick { cursor: pointer; font-variant-numeric: tabular-nums; }
+.chain-table td.chain-pick:hover { background: rgba(245, 200, 66, .15); color: var(--gold); }

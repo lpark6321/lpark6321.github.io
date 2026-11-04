@@ -1,40 +1,44 @@
-// 小型明細圖元件：用 Canvas 呈現單一標的的簡要走勢。
+// 小型明細圖元件（Page3 個股細節）：當日走勢線，型態觸發點以藍色直線標出（markers 的 index 對應 series）。
 export class MiniDetailChart {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container) {
-    // 段落說明：建立新的 DOM 節點。
     this.root = document.createElement('section');
     this.root.className = 'panel';
-    // 段落說明：更新 DOM 內容。
     this.root.innerHTML = '<div class="panel__header"><span class="panel__badge">M</span><h3 class="panel__title">個股細節</h3></div><div class="panel__body"><div class="ohlc"></div><canvas></canvas></div>';
     this.canvas = this.root.querySelector('canvas');
     this.canvas.style.width = '100%';
     this.canvas.style.height = '220px';
-    // 段落說明：取得 Canvas 2D context 進行繪圖。
     this.ctx = this.canvas.getContext('2d');
     this.ohlc = this.root.querySelector('.ohlc');
-    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.root);
   }
 
-  // ensureCanvasSize：方法用途註解，處理此元件或類別的一段行為。
   ensureCanvasSize() {
-    const width = Math.max(220, Math.floor(this.canvas.clientWidth || 460));
-    const height = 220;
-    if (this.canvas.width !== width) this.canvas.width = width;
-    if (this.canvas.height !== height) this.canvas.height = height;
+    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
+    const dpr = window.devicePixelRatio || 1;
+    this.width = Math.max(220, Math.floor(this.canvas.clientWidth || 460));
+    this.height = 220;
+    const backingW = Math.round(this.width * dpr);
+    const backingH = Math.round(this.height * dpr);
+    if (this.canvas.width !== backingW) this.canvas.width = backingW;
+    if (this.canvas.height !== backingH) this.canvas.height = backingH;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // update：方法用途註解，處理此元件或類別的一段行為。
   update({ code, ohlc, series = [], markers = [] }) {
     this.ensureCanvasSize();
-    this.ohlc.textContent = `${code} O:${ohlc.open} H:${ohlc.high} L:${ohlc.low} C:${ohlc.close} V:${ohlc.vol}`;
+    this.ohlc.textContent = `${code}　開 ${ohlc.open}　高 ${ohlc.high}　低 ${ohlc.low}　收 ${ohlc.close}　量 ${ohlc.vol}`;
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    // 段落說明：清除上一輪 Canvas 繪圖內容。
+    const w = this.width;
+    const h = this.height;
     ctx.clearRect(0, 0, w, h);
-    if (!series.length) return;
+    if (!series.length) {
+      ctx.fillStyle = '#8ea0be';
+      ctx.font = '13px "Noto Sans TC"';
+      ctx.textAlign = 'center';
+      ctx.fillText('無當日走勢資料', w / 2, h / 2);
+      ctx.textAlign = 'left';
+      return;
+    }
     const min = Math.min(...series);
     const max = Math.max(...series);
     const range = max - min || 1;
@@ -57,7 +61,5 @@ export class MiniDetailChart {
     });
   }
 
-  // destroy：方法用途註解，處理此元件或類別的一段行為。
-  // 段落說明：移除 DOM 節點或釋放畫面資源。
   destroy() { this.root.remove(); }
 }

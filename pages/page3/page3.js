@@ -1,22 +1,16 @@
-// Page3 掛載邏輯：呈現 watchlist、篩選結果與可收合面板。
-import { store } from '../../data/store.js';
+// Page3 自選列表 + 型態提醒：自選股（含即時報價）、型態開關、提醒表、個股細節（當日 1 分 K 走勢 + 觸發點）。
+// 只讀 store：報價、選取個股的 1 分 K 由 marketFeed 寫入，型態由 services/patternEngine.js 計算。
+import { store, isValidStockCode } from '../../data/store.js';
 import { WatchlistSidebar } from '../../components/WatchlistSidebar.js';
 import { AlertTable } from '../../components/AlertTable.js';
 import { PatternTogglePanel } from '../../components/PatternTogglePanel.js';
 import { MiniDetailChart } from '../../components/MiniDetailChart.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { isTwSpotSession } from '../../services/marketCalendar.js';
+import { orDash, quoteByCode } from '../../services/quoteUtils.js';
 
-// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-let cleanup = () => {};
-
-// fakeIntraday：函式用途註解，說明此處封裝一段可重用的流程。
-function fakeIntraday(price) {
-  return Array.from({ length: 60 }, (_, i) => +(price * (0.995 + i * 0.0002 + (Math.random() - 0.5) * 0.004)).toFixed(2));
-}
-
-// mount：函式用途註解，說明此處封裝一段可重用的流程。
+// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
 export function mount(container) {
-  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 3｜自選列表 + 型態提醒</h2></div>
     <div class="p3-grid9">
@@ -31,7 +25,6 @@ export function mount(container) {
   `;
 
   const gridEl = container.querySelector('.p3-grid9');
-  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (name, fallback) => {
     const value = parseFloat(getComputedStyle(gridEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -44,7 +37,6 @@ export function mount(container) {
   });
 
   const side = new WatchlistSidebar(container.querySelector('#p3-left'));
-  // table：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const table = new AlertTable(container.querySelector('#p3-alert'), { onSelect: (code) => store.set('selectedStock', code) });
   const toggles = new PatternTogglePanel(container.querySelector('#p3-toggle'), {
     onChange: (enabled) => store.set('enabledPatterns', enabled),
@@ -59,49 +51,65 @@ export function mount(container) {
   toggles.root.classList.add('p3-resize-panel');
   detail.root.classList.add('p3-resize-panel');
 
-  if (!store.get('enabledPatterns').length) store.set('enabledPatterns', toggles.getEnabled());
+  // 新增自選股前先驗代碼：格式不符就攔下並提示（capture 階段先於元件自己的 click 處理）。
+  const codeInput = side.root.querySelector('.code-input');
+  const onAddClick = (event) => {
+    if (!event.target.closest('.add-btn') || !codeInput) return;
+    const code = codeInput.value.trim();
+    if (!code || isValidStockCode(code)) return;
+    event.stopPropagation();
+    codeInput.setCustomValidity(`「${code}」不是有效代碼：需 4-6 碼英數字，例如 2330、00631L`);
+    codeInput.reportValidity();
+  };
+  const clearValidity = () => codeInput?.setCustomValidity('');
+  side.root.addEventListener('click', onAddClick, true);
+  codeInput?.addEventListener('input', clearValidity);
 
-  // renderDetail：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const renderDetail = (code) => {
-    const all = [...store.get('topStocks'), ...store.get('screenResults')];
-    // hit：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const hit = all.find((x) => x.code === code) || { code, price: 100 };
-    const series = fakeIntraday(hit.price);
-    // alerts：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const alerts = store.get('patternAlerts').filter((a) => a.code === code);
+
+  // 個股細節：開高低收量取自目前來源的報價；走勢是該股當日現貨盤的 1 分 K 收盤價，型態觸發點標成直線。
+  const renderDetail = () => {
+    const code = store.get('selectedStock');
+    const q = quoteByCode(code) || {};
+    const intraday = store.get('selectedIntraday');
+    const candles = intraday?.code === code
+      ? intraday.candles.filter((row) => typeof row.time === 'number' && isTwSpotSession(row.time * 1000))
+      : [];
+    const markers = store.get('patternAlerts')
+      .filter((alert) => alert.code === code && candles.length)
+      .map((alert) => ({ index: Math.max(0, candles.findLastIndex((row) => row.time * 1000 <= alert.triggeredAt)) }));
     detail.update({
       code,
-      ohlc: { open: series[0], high: Math.max(...series), low: Math.min(...series), close: series.at(-1), vol: Math.round(Math.random() * 80000) },
-      series,
-      markers: alerts.map((_, i) => ({ index: Math.max(5, 10 + i * 12) }))
+      ohlc: { open: orDash(q.open), high: orDash(q.high), low: orDash(q.low), close: orDash(q.price), vol: orDash(q.volume) },
+      series: candles.map((row) => row.close),
+      markers
     });
   };
 
   side.update(store.get('watchlist'));
   table.update(store.get('patternAlerts'));
-  renderDetail(store.get('selectedStock'));
+  renderDetail();
 
-  // unsub1：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub1 = store.subscribe('watchlist', (d) => side.update(d));
-  // unsub2：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub2 = store.subscribe('patternAlerts', (d) => table.update(d));
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub3 = store.subscribe('selectedStock', renderDetail);
+  // 報價更新時自選清單只改價格格子；個股細節跟著選取股票、1 分 K、報價與觸發重畫。
+  const onQuotes = () => {
+    side.updateQuotes();
+    renderDetail();
+  };
+  const unsubs = [
+    store.subscribe('watchlist', (d) => side.update(d)),
+    store.subscribe('patternAlerts', (d) => {
+      table.update(d);
+      renderDetail();
+    }),
+    store.subscribe('selectedStock', renderDetail),
+    store.subscribe('selectedIntraday', renderDetail),
+    ...['marketMap', 'topStocks', 'watchQuotes'].map((key) => store.subscribe(key, onQuotes))
+  ];
 
-  cleanup = () => {
-    unsub1(); unsub2(); unsub3();
+  return () => {
+    unsubs.forEach((unsub) => unsub());
+    side.root.removeEventListener('click', onAddClick, true);
+    codeInput?.removeEventListener('input', clearValidity);
     stopMainSplit();
     side.destroy(); table.destroy(); toggles.destroy(); detail.destroy();
   };
-
-  // 段落說明：回傳目前頁面的清理函式。
-  return cleanup;
-}
-
-// unmount：函式用途註解，說明此處封裝一段可重用的流程。
-export function unmount() {
-  cleanup();
-  cleanup = () => {};
 }

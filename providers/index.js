@@ -3,7 +3,6 @@ import { FinMindProvider } from './finMindProvider.js';
 import { TaifexDailyTickProvider } from './taifexDailyTickProvider.js';
 import { YahooFinanceProvider } from './yahooFinanceProvider.js';
 
-// createMarketDataProvider：函式用途註解，說明此處封裝一段可重用的流程。
 export function createMarketDataProvider(options) {
   switch (options.type) {
     case 'yahoo':

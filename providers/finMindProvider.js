@@ -1,7 +1,6 @@
 // FinMind 資料提供者：取得台股行情並轉成專案共用資料結構。
 import { BaseMarketDataProvider } from './baseProvider.js';
 
-// formatDate：函式用途註解，說明此處封裝一段可重用的流程。
 function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -9,16 +8,13 @@ function formatDate(date) {
   return `${y}-${m}-${d}`;
 }
 
-// shiftDays：函式用途註解，說明此處封裝一段可重用的流程。
 function shiftDays(base, offset) {
   const copy = new Date(base);
   copy.setDate(copy.getDate() + offset);
   return copy;
 }
 
-// FinMindProvider：類別用途註解，集中管理相關狀態與方法。
 export class FinMindProvider extends BaseMarketDataProvider {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(options) {
     super({
       type: 'finmind',
@@ -31,7 +27,6 @@ export class FinMindProvider extends BaseMarketDataProvider {
     this.token = options.token || '';
   }
 
-  // buildHeaders：方法用途註解，處理此元件或類別的一段行為。
   buildHeaders() {
     if (!this.token) return { Accept: 'application/json' };
     return {
@@ -40,7 +35,6 @@ export class FinMindProvider extends BaseMarketDataProvider {
     };
   }
 
-  // requestDataset：方法用途註解，處理此元件或類別的一段行為。
   async requestDataset(params) {
     const url = new URL(this.apiUrl);
     Object.entries(params).forEach(([key, value]) => {
@@ -49,7 +43,6 @@ export class FinMindProvider extends BaseMarketDataProvider {
       }
     });
 
-    // 段落說明：呼叫外部資料來源並等待回應。
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: this.buildHeaders()
@@ -66,15 +59,15 @@ export class FinMindProvider extends BaseMarketDataProvider {
     return payload.data;
   }
 
-  // buildTaiexRecord：方法用途註解，處理此元件或類別的一段行為。
   async buildTaiexRecord(today, startDate) {
+    // 兩個資料集都是「加權股價指數」本身；TaiwanStockTotalReturnIndex 是報酬指數（約兩倍高），不能拿來當昨收。
     const [taiexSeries, taiexDaily] = await Promise.all([
       this.requestDataset({
         dataset: 'TaiwanVariousIndicators5Seconds',
         start_date: today
       }),
       this.requestDataset({
-        dataset: 'TaiwanStockTotalReturnIndex',
+        dataset: 'TaiwanStockPrice',
         data_id: 'TAIEX',
         start_date: startDate,
         end_date: today
@@ -82,11 +75,13 @@ export class FinMindProvider extends BaseMarketDataProvider {
     ]);
 
     const latestIntraday = taiexSeries.at(-1);
-    const lastTwoDaily = taiexDaily.slice(-2);
-    const latestDaily = lastTwoDaily.at(-1);
-    const previousDaily = lastTwoDaily.length > 1 ? lastTwoDaily.at(-2) : null;
-    const price = latestIntraday?.TAIEX ?? latestDaily?.price;
-    const prevClose = previousDaily?.price;
+    const daily = taiexDaily.filter((row) => typeof row.close === 'number');
+    // 盤中：昨收 = 今天以前最後一筆日線；沒有盤中資料時：顯示最新日線收盤，昨收取它前一筆。
+    const previousRows = typeof latestIntraday?.TAIEX === 'number'
+      ? daily.filter((row) => row.date < today)
+      : daily.slice(0, -1);
+    const price = latestIntraday?.TAIEX ?? daily.at(-1)?.close;
+    const prevClose = previousRows.at(-1)?.close;
 
     if (typeof price !== 'number') {
       return this.createFallbackRecord(this.quotes.find((item) => item.symbol === '^TWII'), {
@@ -104,20 +99,15 @@ export class FinMindProvider extends BaseMarketDataProvider {
     };
   }
 
-  // buildFutureRecord：方法用途註解，處理此元件或類別的一段行為。
   async buildFutureRecord() {
-    // quote：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const quote = this.quotes.find((item) => item.symbol === 'TXF=F');
     return this.createFallbackRecord(quote, {
       note: 'FinMind futures mapping is prepared but not enabled until the exact futures dataset is confirmed'
     });
   }
 
-  // buildStockRecords：方法用途註解，處理此元件或類別的一段行為。
   async buildStockRecords(today, startDate) {
-    // stockQuotes：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const stockQuotes = this.quotes.filter((item) => item.symbol.endsWith('.TW'));
-    // rows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
     const rows = await Promise.all(stockQuotes.map(async (quote) => {
       const stockId = quote.symbol.replace('.TW', '');
       const series = await this.requestDataset({
@@ -158,7 +148,6 @@ export class FinMindProvider extends BaseMarketDataProvider {
     return map;
   }
 
-  // requestRemoteData：方法用途註解，處理此元件或類別的一段行為。
   async requestRemoteData() {
     const now = new Date();
     const today = formatDate(now);
@@ -173,10 +162,5 @@ export class FinMindProvider extends BaseMarketDataProvider {
     stockMap.set(taiexRecord.symbol, taiexRecord);
     stockMap.set(futureRecord.symbol, futureRecord);
     return this.mergeRecords(stockMap);
-  }
-
-  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
-  async fetchQuotes(options = {}) {
-    return this.withCache(options, () => this.requestRemoteData());
   }
 }

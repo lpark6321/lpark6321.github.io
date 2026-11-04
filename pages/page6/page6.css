@@ -179,3 +179,27 @@
 .tm-ctrl-group--chart .tm-btn {
   min-width: 64px;
 }
+
+/* 非 Yahoo 來源沒有市場地圖：整張圖灰掉、不能互動，中間顯示說明（文字放在 data-note）。 */
+.p6-map.is-unsupported > * { filter: grayscale(1) opacity(.3); pointer-events: none; }
+.p6-map.is-unsupported::after {
+  content: attr(data-note);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.tm-search {
+  height: 26px;
+  width: 140px;
+  padding: 0 8px;
+  background: var(--card2, #151c2b);
+  color: var(--text, #dfe7f7);
+  border: 1px solid var(--border2, #263050);
+  border-radius: 3px;
+}

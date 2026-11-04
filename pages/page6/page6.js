@@ -1,148 +1,29 @@
-// Page6 台股市場地圖：掛載方塊圖/旭日圖控制列、提示框與明細面板。
+// Page6 台股市場地圖：掛載方塊圖/旭日圖控制列、提示框與明細面板。只讀 store 的 marketMap（由 marketFeed 寫入）。
 import { store } from '../../data/store.js';
-import { TW_STOCK_UNIVERSE } from '../../data/twStocks.js';
-import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
-import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
-import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
+import { MARKET_UNIVERSE } from '../../data/marketUniverse.js';
 import { TreemapCanvas } from '../../components/TreemapCanvas.js';
 import { TreemapControls } from '../../components/TreemapControls.js';
 import { TreemapTooltip } from '../../components/TreemapTooltip.js';
 import { TreemapDetail } from '../../components/TreemapDetail.js';
 import { SunburstChart } from '../../components/SunburstChart.js';
-import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { sourceInfo, subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
+import { liveMarketMapQuotes } from '../../services/quoteUtils.js';
 
-// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-let cleanup = () => {};
+// 成分股名單（data/marketUniverse.js）負責名稱、分類與權重，版面比例因此不受報價缺漏影響；
+// marketMap 只覆蓋即時價格、漲跌、量與量比。沒有報價的股票這些欄位留空，圖上畫成「無資料」。
+const QUOTE_FIELDS = ['price', 'change', 'changePct', 'open', 'high', 'low', 'prevClose', 'volume', 'volRatio'];
 
-// buildPage6Universe：函式用途註解，說明此處封裝一段可重用的流程。
-function buildPage6Universe() {
-  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const map = new Map(TW_STOCK_UNIVERSE.map((stock) => [stock.code, { ...stock }]));
-
-  Object.values(TW50_BY_CODE).forEach((item) => {
-    const existing = map.get(item.code);
-    if (existing) {
-      map.set(item.code, {
-        ...existing,
-        name: item.name || existing.name,
-        isIn0050: true,
-        tw50WeightPct: item.weightPct,
-        tw50Major: item.majorGroup,
-        tw50Rank: item.rank,
-        syntheticConstituentOnly: false
-      });
-      return;
-    }
-
-    map.set(item.code, {
-      code: item.code,
-      name: item.name,
-      sector: item.majorGroup,
-      subSector: '台灣50',
-      marketCap: Math.max(item.weightPct * 100, 1),
-      isIn0050: true,
-      tw50WeightPct: item.weightPct,
-      tw50Major: item.majorGroup,
-      tw50Rank: item.rank,
-      syntheticConstituentOnly: true
-    });
-  });
-
-  Object.values(MID100_BY_CODE).forEach((item) => {
-    const existing = map.get(item.code);
-    if (existing) {
-      map.set(item.code, {
-        ...existing,
-        name: item.name || existing.name,
-        isInMid100: true,
-        mid100WeightPct: item.weightPct,
-        mid100Major: item.majorGroup,
-        mid100Rank: item.rank,
-        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
-      });
-      return;
-    }
-
-    map.set(item.code, {
-      code: item.code,
-      name: item.name,
-      sector: '中型100',
-      subSector: '中型100',
-      marketCap: Math.max(item.weightPct * 100, 1),
-      isInMid100: true,
-      mid100WeightPct: item.weightPct,
-      mid100Major: item.majorGroup,
-      mid100Rank: item.rank,
-      syntheticConstituentOnly: true
-    });
-  });
-
-  Object.values(TAIEX_BY_CODE).forEach((item) => {
-    const existing = map.get(item.code);
-    if (existing) {
-      map.set(item.code, {
-        ...existing,
-        name: item.name || existing.name,
-        yahooSector: item.yahooSector || existing.yahooSector,
-        taiexWeightPct: item.weightPct,
-        taiexSector: item.sector,
-        taiexRank: item.rank,
-        syntheticConstituentOnly: existing.syntheticConstituentOnly || false
-      });
-      return;
-    }
-
-    map.set(item.code, {
-      code: item.code,
-      name: item.name,
-      sector: item.sector,
-      yahooSector: item.yahooSector || null,
-      subSector: '加權',
-      marketCap: Math.max(item.weightPct * 100, 1),
-      taiexWeightPct: item.weightPct,
-      taiexSector: item.sector,
-      taiexRank: item.rank,
-      syntheticConstituentOnly: true
-    });
-  });
-
-  return [...map.values()];
-}
-
-const PAGE6_UNIVERSE = buildPage6Universe();
-
-// mergeData：函式用途註解，說明此處封裝一段可重用的流程。
 function mergeData() {
-  // 靜態 universe 負責名稱、分類與權重；store.marketMap 只覆蓋即時價格、漲跌與量。
-  // 這樣 Page6 的版面比例不會因模擬報價缺資料而消失。
-  const marketRows = store.get('marketMap') || [];
-  // map：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const liveRows = marketRows.filter((row) => row?.source === 'yahoo');
-  const map = new Map(liveRows.map((row) => [String(row.code), row]));
-
-  return PAGE6_UNIVERSE.map((stock) => {
-    const live = map.get(stock.code) || {};
-    const price = Number(live.price);
-    const changePct = Number(live.changePct);
-    const change5d = Number(live.change5d ?? live.fiveDayPct);
-    const volume = Number(live.volume ?? live.turnover);
-    const volRatio = Number(live.volRatio ?? live.volumeRatio);
-
-    return {
-      ...stock,
-      price: Number.isFinite(price) ? price : null,
-      changePct: Number.isFinite(changePct) ? changePct : 0,
-      change5d: Number.isFinite(change5d) ? change5d : 0,
-      volume: Number.isFinite(volume) ? volume : null,
-      volRatio: Number.isFinite(volRatio) ? volRatio : 1
-    };
+  const quotes = liveMarketMapQuotes();
+  return MARKET_UNIVERSE.map((stock) => {
+    const quote = quotes.get(stock.code);
+    return quote ? { ...stock, ...Object.fromEntries(QUOTE_FIELDS.map((key) => [key, quote[key] ?? null])) } : stock;
   });
 }
 
-// mount：函式用途註解，說明此處封裝一段可重用的流程。
+// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
 export function mount(container) {
-  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="p6-layout" id="p6-layout">
       <div class="p6-controls" id="p6-ctrl"></div>
@@ -156,7 +37,6 @@ export function mount(container) {
   const mapEl = container.querySelector('#p6-map');
   const detailEl = container.querySelector('#p6-detail');
 
-  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (name, fallback) => {
     const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -172,20 +52,17 @@ export function mount(container) {
 
   const tooltip = new TreemapTooltip();
   const detail = new TreemapDetail(detailEl, {
-    // 段落說明：移除 DOM 節點或釋放畫面資源。
     onClose: () => layoutEl.classList.remove('detail-open')
   });
 
   let currentChart = null;
-  let quoteTimer = null;
   const chartState = {
     groupMode: 'sector',
     colorMetric: 'changePct',
-    sizeMetric: 'marketCap'
+    searchQuery: ''
   };
 
   // TreemapCanvas 與 SunburstChart 都實作 _onHover，所以 tooltip wiring 共用同一段。
-  // bindHoverCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const bindHoverCallbacks = (chart) => {
     chart._onHover = (stock, event) => {
       if (stock && event) tooltip.show(stock, event);
@@ -193,7 +70,6 @@ export function mount(container) {
     };
   };
 
-  // bindTreemapCallbacks：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const bindTreemapCallbacks = (treemap) => {
     bindHoverCallbacks(treemap);
 
@@ -208,18 +84,17 @@ export function mount(container) {
     };
   };
 
-  // createChart：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  const applySearch = () => currentChart?.setSearchQuery?.(chartState.searchQuery);
+
   const createChart = (type) => {
     // 切換方塊圖/旭日圖時先銷毀舊 Canvas，避免 ResizeObserver 和事件監聽殘留。
     if (currentChart && typeof currentChart.destroy === 'function') {
       currentChart.destroy();
     }
 
-    // 段落說明：更新 DOM 內容。
     mapEl.innerHTML = '';
     detail.hide();
     tooltip.hide();
-    // 段落說明：移除 DOM 節點或釋放畫面資源。
     layoutEl.classList.remove('detail-open');
 
     if (type === 'sunburst') {
@@ -232,12 +107,11 @@ export function mount(container) {
     bindTreemapCallbacks(currentChart);
   };
 
-  // applyChartState：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const applyChartState = () => {
-    // 控制列狀態獨立保存，換圖形後可以重新套回目前分組、顏色與大小設定。
+    // 控制列狀態獨立保存，換圖形後可以重新套回目前分組與顏色設定。
     currentChart?.setGroupMode?.(chartState.groupMode);
     currentChart?.setColorMetric?.(chartState.colorMetric);
-    currentChart?.setSizeMetric?.(chartState.sizeMetric);
+    applySearch();
   };
 
   createChart('treemap');
@@ -252,9 +126,9 @@ export function mount(container) {
       chartState.colorMetric = metric;
       currentChart?.setColorMetric?.(metric);
     },
-    onSizeChange: (metric) => {
-      chartState.sizeMetric = metric;
-      currentChart?.setSizeMetric?.(metric);
+    onSearch: (query) => {
+      chartState.searchQuery = query;
+      applySearch();
     },
     onChartChange: (type) => {
       createChart(type);
@@ -265,39 +139,25 @@ export function mount(container) {
 
   currentChart.update?.(mergeData());
 
-  const refreshQuotes = async (force = false) => {
-    try {
-      await updateYahooTaiexOnce({ force });
-    } catch (error) {
-      console.warn('[page6] quote refresh failed:', error);
-    }
+  // 市場地圖只有提供個股報價的來源（目前只有 Yahoo）才有；其他來源整張圖灰掉並說明。
+  const renderSourceNote = () => {
+    mapEl.classList.toggle('is-unsupported', !sourceInfo().stocks);
   };
+  mapEl.dataset.note = '此資料來源沒有市場地圖';
+  renderSourceNote();
 
-  refreshQuotes(true);
-  quoteTimer = setInterval(refreshQuotes, 10000);
+  // 報價由 marketFeed 寫進 marketMap，這裡只訂閱。
+  const unsubs = [
+    store.subscribe('marketMap', () => currentChart?.update?.(mergeData())),
+    subscribeDashboardDataSource(renderSourceNote)
+  ];
 
-  // unsub：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub = store.subscribe('marketMap', () => {
-    currentChart?.update?.(mergeData());
-  });
-
-  cleanup = () => {
-    unsub();
-    if (quoteTimer) clearInterval(quoteTimer);
+  return () => {
+    unsubs.forEach((unsub) => unsub());
     stopDetailSplit();
     controls.destroy();
     currentChart?.destroy?.();
     tooltip.destroy();
     detail.destroy();
   };
-
-  // 段落說明：回傳目前頁面的清理函式。
-  return cleanup;
-}
-
-// unmount：函式用途註解，說明此處封裝一段可重用的流程。
-export function unmount() {
-  cleanup();
-  cleanup = () => {};
 }

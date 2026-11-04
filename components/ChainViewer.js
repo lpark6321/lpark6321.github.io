@@ -1,40 +1,42 @@
-// 選擇權鏈元件：呈現履約價、買賣權報價與互動選取。
-import { store } from '../data/store.js';
+// 選擇權鏈元件（Page4）：Call／Put 各顯示買價與賣價，點賣價＝以賣價買進一口，點買價＝以買價賣出一口。
+import { fmtNum } from '../services/quoteUtils.js';
 
-// ChainViewer：類別用途註解，集中管理相關狀態與方法。
 export class ChainViewer {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
-    this.onStrike = options.onStrike || (() => {});
-    // 段落說明：建立新的 DOM 節點。
+    this.onPick = options.onPick || (() => {});
     this.root = document.createElement('section');
     this.root.className = 'panel';
-    // 段落說明：更新 DOM 內容。
     this.root.innerHTML = `
       <div class="panel__header"><span class="panel__badge">C</span><h3 class="panel__title">Option Chain</h3></div>
-      <div class="panel__body table-wrap"><table><thead><tr><th>Call</th><th>履約價</th><th>Put</th></tr></thead><tbody></tbody></table></div>
+      <div class="panel__body table-wrap"><table class="chain-table"><thead>
+        <tr><th colspan="2">Call</th><th rowspan="2">履約價</th><th colspan="2">Put</th></tr>
+        <tr><th title="點擊＝賣出">買價</th><th title="點擊＝買進">賣價</th><th title="點擊＝賣出">買價</th><th title="點擊＝買進">賣價</th></tr>
+      </thead><tbody></tbody></table></div>
     `;
     this.tbody = this.root.querySelector('tbody');
-    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.root);
+    this.tbody.addEventListener('click', (e) => {
+      const cell = e.target.closest('[data-pick]');
+      if (!cell) return;
+      const [type, action, strike, premium] = cell.dataset.pick.split('|');
+      this.onPick({ type, action, strike: Number(strike), premium: Number(premium) });
+    });
   }
 
-  update(chain = store.get('optionsChain')) {
-    // rows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const rows = chain.calls.map((c, i) => ({ call: c, put: chain.puts[i] })).sort((a, b) => a.call.strike - b.call.strike);
-    // 段落說明：更新 DOM 內容。
-    this.tbody.innerHTML = rows.map((r) => `
-      <tr data-strike="${r.call.strike}">
-        <td>${r.call.bid}/${r.call.ask}</td>
-        <td>${r.call.strike}</td>
-        <td>${r.put.bid}/${r.put.ask}</td>
-      </tr>
-    `).join('');
-    // 段落說明：綁定使用者互動事件。
-    this.tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => this.onStrike(Number(tr.dataset.strike))));
+  update(chain) {
+    const puts = new Map(chain.puts.map((row) => [row.strike, row]));
+    const cell = (type, action, row, price) => (price > 0
+      ? `<td class="chain-pick" data-pick="${type}|${action}|${row.strike}|${price}" title="${action === 'buy' ? '買進' : '賣出'}一口">${fmtNum(price, 1)}</td>`
+      : '<td>--</td>');
+    this.tbody.innerHTML = [...chain.calls].sort((a, b) => a.strike - b.strike).map((call) => {
+      const put = puts.get(call.strike) || { strike: call.strike };
+      return `<tr>
+        ${cell('call', 'sell', call, call.bid)}${cell('call', 'buy', call, call.ask)}
+        <td><b>${fmtNum(call.strike, 0)}</b></td>
+        ${cell('put', 'sell', put, put.bid)}${cell('put', 'buy', put, put.ask)}
+      </tr>`;
+    }).join('');
   }
 
-  // destroy：方法用途註解，處理此元件或類別的一段行為。
-  // 段落說明：移除 DOM 節點或釋放畫面資源。
   destroy() { this.root.remove(); }
 }

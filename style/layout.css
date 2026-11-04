@@ -116,10 +116,6 @@ body {
   height: 100%;
   overflow: hidden;
 }
-.page-grid {
-  display: grid;
-  gap: 8px;
-}
 .tabbar {
   display: flex;
   flex-wrap: wrap;

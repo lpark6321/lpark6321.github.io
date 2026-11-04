@@ -51,3 +51,120 @@ button:hover { border-color: var(--gold); }
   from { background: rgba(245,200,66,.22); }
   to { background: transparent; }
 }
+
+/* Page1 C 區自有資料圖表（services/marketChart.js） */
+.lc-chart {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  background: #0d0f14;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.lc-chart__toolbar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 42px;
+  padding: 6px 8px;
+  background: rgba(9, 10, 14, .96);
+  border-bottom: 1px solid rgba(120, 140, 180, .28);
+}
+.lc-chart__label,
+.lc-chart__control,
+.lc-chart__button {
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  font: 12px "Noto Sans TC", sans-serif;
+  outline: none;
+}
+.lc-chart__label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid rgba(245, 200, 66, .42);
+  background: rgba(245, 200, 66, .1);
+  color: #f5c842;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .04em;
+}
+.lc-chart__control {
+  max-width: none;
+  padding: 0 28px 0 8px;
+  background: #151c2b;
+  color: #dfe7f7;
+  border: 1px solid rgba(120, 140, 180, .35);
+  border-radius: 3px;
+  line-height: 26px;
+}
+.lc-chart__button {
+  width: 92px;
+  padding: 0 8px;
+  background: #2a1f07;
+  color: #f5c842;
+  border: 1px solid rgba(245, 200, 66, .55);
+  border-radius: 3px;
+  font-weight: 700;
+  line-height: 26px;
+  cursor: pointer;
+}
+.lc-chart__button[hidden] { display: none; }
+.lc-chart__status {
+  flex: 1 1 180px;
+  min-width: 160px;
+  padding: 0 4px;
+  color: #8da0bf;
+  font: 12px "Noto Sans TC", sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lc-chart__area { position: relative; min-height: 0; }
+.lc-chart__canvas { position: absolute; inset: 0; }
+.lc-chart-legend {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 3;
+  min-width: 280px;
+  max-width: calc(100% - 96px);
+  padding: 7px 10px;
+  border: 1px solid rgba(120, 140, 180, .24);
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(9, 10, 14, .88), rgba(9, 10, 14, .62));
+  backdrop-filter: blur(2px);
+  color: #dfe7f7;
+  font: 12px "Noto Sans TC", "JetBrains Mono", sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+  pointer-events: none;
+}
+
+/* 停用（灰掉）的欄位、按鈕：保留位置，但不能用。 */
+.is-disabled { color: var(--text2); opacity: .45; cursor: not-allowed; }
+button.is-disabled, button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 自選股側欄每列的現價／漲跌 */
+.wl-quote { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 區塊拿不到資料（資料來源不提供）：內容灰掉、不能互動，中間顯示說明（文字放在 .panel__body 的 data-note）。 */
+.panel.is-unsupported > .panel__body { position: relative; }
+.panel.is-unsupported > .panel__body > * { filter: grayscale(1) opacity(.3); pointer-events: none; }
+.panel.is-unsupported > .panel__body::after {
+  content: attr(data-note);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text2);
+  font-weight: 700;
+  pointer-events: none;
+}

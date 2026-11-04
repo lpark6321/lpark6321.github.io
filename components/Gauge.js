@@ -3,9 +3,7 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// Gauge：類別用途註解，集中管理相關狀態與方法。
 export class Gauge {
-  // constructor：方法用途註解，處理此元件或類別的一段行為。
   constructor(container, options = {}) {
     this.options = {
       scaleMin: options.scaleMin ?? 0,
@@ -22,20 +20,19 @@ export class Gauge {
       tickStep: options.tickStep || 20
     };
 
-    // 段落說明：建立新的 DOM 節點。
     this.canvas = document.createElement('canvas');
-    this.canvas.width = this.options.width;
-    this.canvas.height = this.options.height;
+    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.round(this.options.width * dpr);
+    this.canvas.height = Math.round(this.options.height * dpr);
     this.canvas.style.width = '100%';
     this.canvas.style.height = '100%';
     this.canvas.style.display = 'block';
-    // 段落說明：將建立好的節點掛回頁面。
     container.appendChild(this.canvas);
-    // 段落說明：取得 Canvas 2D context 進行繪圖。
     this.ctx = this.canvas.getContext('2d');
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // update：方法用途註解，處理此元件或類別的一段行為。
   update(payload = 0) {
     const state = typeof payload === 'number'
       ? {
@@ -58,24 +55,21 @@ export class Gauge {
     this._render(state);
   }
 
-  // _valueToAngle：方法用途註解，處理此元件或類別的一段行為。
   _valueToAngle(value) {
     const { scaleMin, scaleMax } = this.options;
     const ratio = clamp((value - scaleMin) / (scaleMax - scaleMin || 1), 0, 1);
     return Math.PI + ratio * Math.PI;
   }
 
-  // _render：方法用途註解，處理此元件或類別的一段行為。
   _render(state) {
     const ctx = this.ctx;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.options.width;
+    const h = this.options.height;
     const cx = w / 2;
     const cy = h - Math.max(22, Math.round(h * 0.16));
     const outerR = Math.min(w * 0.45, h * 0.78);
     const innerR = outerR * 0.68;
 
-    // 段落說明：清除上一輪 Canvas 繪圖內容。
     ctx.clearRect(0, 0, w, h);
 
     const startA = Math.PI;
@@ -199,9 +193,7 @@ export class Gauge {
     ctx.fillText(state.title || '', cx, cy - outerR * 0.4);
   }
 
-  // destroy：方法用途註解，處理此元件或類別的一段行為。
   destroy() {
-    // 段落說明：移除 DOM 節點或釋放畫面資源。
     this.canvas.remove();
   }
 }

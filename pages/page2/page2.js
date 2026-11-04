@@ -1,236 +1,26 @@
-// Page2 掛載邏輯：呈現市場監控區塊並處理可調整大小的版面。
+// Page2 市場溫度：只讀 store（由 marketFeed 寫入）計算統計並重畫；繪圖函式在 page2Draw.js。
 import { store } from '../../data/store.js';
 import { Panel } from '../../components/Panel.js';
 import { Gauge } from '../../components/Gauge.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
-import { updateYahooTaiexOnce } from '../../services/yahooTaiexPoller.js';
+import { getDashboardDataSource, sourceInfo, subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
 import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
 import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
 import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
+import { TOP10_CODES, liveMarketMapQuotes, pctFromPrevClose, trendClass as c } from '../../services/quoteUtils.js';
+import { drawBars, drawCategoryCandle, drawSectorPie } from './page2Draw.js';
 
-// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-let cleanup = () => {};
-
-const TOP10_CODES = ['2330', '2308', '2317', '2454', '3711', '2881', '2382', '2412', '2882', '2891'];
-const CATEGORY_KEYS = ['台指', '電子', '金融', '傳產', '摩台'];
 const LIMIT_FALLBACK_PCT = 9.8;
 
-// c：函式用途註解，說明此處封裝一段可重用的流程。
-function c(v) {
-  return v >= 0 ? 'metric-up' : 'metric-down';
-}
-
-// clamp：函式用途註解，說明此處封裝一段可重用的流程。
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-// resolveCanvasSize：函式用途註解，說明此處封裝一段可重用的流程。
-function resolveCanvasSize(canvas, options = {}) {
-  const maxWidth = options.maxWidth ?? 560;
-  const minWidth = options.minWidth ?? 220;
-  const targetHeight = options.height ?? 240;
-  const clientWidth = Math.floor(canvas.clientWidth || maxWidth);
-  const width = clamp(clientWidth, minWidth, maxWidth);
-  canvas.width = width;
-  canvas.height = targetHeight;
-  return { w: width, h: targetHeight };
-}
-
-// drawAxis：函式用途註解，說明此處封裝一段可重用的流程。
-function drawAxis(ctx, w, h, minV, maxV, options = {}) {
-  const left = options.left ?? 44;
-  const right = options.right ?? 10;
-  const top = options.top ?? 8;
-  const bottom = options.bottom ?? 20;
-  const ticks = options.ticks ?? [minV, (minV + maxV) / 2, maxV];
-  const range = maxV - minV || 1;
-  // y：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const y = (v) => top + (1 - (v - minV) / range) * (h - top - bottom);
-
-  ctx.strokeStyle = '#ffffff33';
-  ticks.forEach((t) => {
-    const yy = y(t);
-    ctx.beginPath();
-    ctx.moveTo(left, yy);
-    ctx.lineTo(w - right, yy);
-    ctx.stroke();
-    ctx.fillStyle = '#9aa6c2';
-    ctx.font = '12px Noto Sans TC';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(t.toFixed(1), left - 6, yy);
-  });
-
-  ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(left, h - bottom);
-  ctx.strokeStyle = '#ffffff66';
-  ctx.stroke();
-
-  return { left, right, y };
-}
-
-// drawBars：函式用途註解，說明此處封裝一段可重用的流程。
-function drawBars(canvas, items, options = {}) {
-  // 段落說明：取得 Canvas 2D context 進行繪圖。
-  const ctx = canvas.getContext('2d');
-  const { w, h } = resolveCanvasSize(canvas, { maxWidth: options.maxWidth ?? 560, height: 240, minWidth: 260 });
-  // 段落說明：清除上一輪 Canvas 繪圖內容。
-  ctx.clearRect(0, 0, w, h);
-
-  // maxAbs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const maxAbs = Math.max(2, ...items.map((x) => Math.abs(x.value)));
-  const axisBottom = options.axisBottom ?? 20;
-  const { left, right, y } = drawAxis(ctx, w, h, -maxAbs, maxAbs, { bottom: axisBottom, ticks: options.ticks });
-  const pw = w - left - right;
-  const gap = items.length > 7 ? 6 : 8;
-  const bw = Math.max(10, (pw - items.length * gap) / items.length);
-
-  items.forEach((it, i) => {
-    const x = left + gap + i * (bw + gap);
-    const y0 = y(0);
-    const y1 = y(it.value);
-    const barY = Math.min(y0, y1);
-    const barH = Math.abs(y0 - y1);
-    ctx.fillStyle = it.value >= 0 ? '#f03a5f' : '#1fd67a';
-    ctx.fillRect(x, barY, bw, Math.max(2, barH));
-
-    ctx.fillStyle = '#cdd6ea';
-    ctx.font = '12px Noto Sans TC';
-    ctx.textAlign = 'center';
-    if (it.subLabel) {
-      ctx.fillText(it.label, x + bw / 2, h - 20);
-      ctx.fillStyle = '#8f9bb7';
-      ctx.fillText(it.subLabel, x + bw / 2, h - 5);
-    } else {
-      ctx.fillText(it.label, x + bw / 2, h - 5);
-    }
-  });
-}
-
-// drawCategoryCandle：函式用途註解，說明此處封裝一段可重用的流程。
-function drawCategoryCandle(canvas, items, options = {}) {
-  // 段落說明：取得 Canvas 2D context 進行繪圖。
-  const ctx = canvas.getContext('2d');
-  const { w, h } = resolveCanvasSize(canvas, { maxWidth: options.maxWidth ?? 560, height: 240, minWidth: 260 });
-  // 段落說明：清除上一輪 Canvas 繪圖內容。
-  ctx.clearRect(0, 0, w, h);
-
-  // highs：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const highs = items.map((x) => x.high);
-  // lows：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const lows = items.map((x) => x.low);
-  const minV = options.minV ?? Math.min(...lows);
-  const maxV = options.maxV ?? Math.max(...highs);
-  const { left, right, y } = drawAxis(ctx, w, h, minV, maxV, { ticks: options.ticks, bottom: 24 });
-  const pw = w - left - right;
-  const bw = Math.max(16, (pw - items.length * 14) / items.length);
-
-  items.forEach((it, i) => {
-    const x = left + 10 + i * (bw + 14);
-    const mid = x + bw / 2;
-    const yHigh = y(it.high);
-    const yLow = y(it.low);
-    const yOpen = y(it.open);
-    const yClose = y(it.close);
-    const up = it.close >= it.open;
-
-    ctx.strokeStyle = '#c8d3f5';
-    ctx.beginPath();
-    ctx.moveTo(mid, yHigh);
-    ctx.lineTo(mid, yLow);
-    ctx.stroke();
-
-    ctx.fillStyle = up ? '#f03a5f' : '#1fd67a';
-    ctx.fillRect(x, Math.min(yOpen, yClose), bw, Math.max(2, Math.abs(yOpen - yClose)));
-
-    ctx.fillStyle = '#cdd6ea';
-    ctx.font = '12px Noto Sans TC';
-    ctx.textAlign = 'center';
-    ctx.fillText(it.label, mid, h - 6);
-  });
-}
-
-// drawSectorPie：函式用途註解，說明此處封裝一段可重用的流程。
-function drawSectorPie(canvas, data, options = {}) {
-  // 段落說明：取得 Canvas 2D context 進行繪圖。
-  const ctx = canvas.getContext('2d');
-  const size = options.size || 120;
-  const dpr = window.devicePixelRatio || 1;
-  const clientW = Math.floor(canvas.clientWidth || size);
-  const clientH = Math.floor(canvas.clientHeight || size);
-  const box = Math.max(72, Math.min(size, Math.min(clientW, clientH)));
-  canvas.width = Math.floor(box * dpr);
-  canvas.height = Math.floor(box * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // 段落說明：清除上一輪 Canvas 繪圖內容。
-  ctx.clearRect(0, 0, box, box);
-
-  const cx = box / 2;
-  const cy = box / 2;
-  const r = box * 0.48;
-  const items = Array.isArray(data.segments)
-    ? data.segments
-    : [
-        { value: data.upPct, color: '#f4867c' },
-        { value: data.flatPct, color: '#d0d0d0' },
-        { value: data.downPct, color: '#8bc34a' }
-      ];
-  // total：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
-  let start = -Math.PI / 2;
-
-  items.forEach((item) => {
-    const angle = (item.value / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, start, start + angle);
-    ctx.closePath();
-    ctx.fillStyle = item.color;
-    ctx.fill();
-    start += angle;
-  });
-}
-
-// getCategoryStats：函式用途註解，說明此處封裝一段可重用的流程。
-function getCategoryStats(taiex, sectors) {
-  // ele：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const ele = sectors.find((s) => s.name === '電子');
-  // fin：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const fin = sectors.find((s) => s.name === '金融');
-  // tra：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const tra = sectors.find((s) => s.name === '傳產') || sectors.find((s) => s.name === '航運');
-
-  const elePct = ele ? +(((ele.upPct - ele.downPct) / 25).toFixed(2)) : 0;
-  const finPct = fin ? +(((fin.upPct - fin.downPct) / 25).toFixed(2)) : 0;
-  const traPct = tra ? +(((tra.upPct - tra.downPct) / 25).toFixed(2)) : 0;
-  const motaiPct = +(taiex.changePct * 0.78).toFixed(2);
-
-  return [
-    { label: '台指', chg: +taiex.changePct.toFixed(2) },
-    { label: '電子', chg: elePct },
-    { label: '金融', chg: finPct },
-    { label: '傳產', chg: traPct },
-    { label: '摩台', chg: motaiPct }
-  ];
-}
-
-function pctFromPrevClose(value, prevClose) {
-  const price = Number(value);
-  const base = Number(prevClose);
-  if (!Number.isFinite(price) || !Number.isFinite(base) || base === 0) return null;
-  return ((price - base) / base) * 100;
-}
-
+// 沒有報價回傳 null（不當成 0% 平盤）。
 function quoteClosePct(row) {
-  const direct = Number(row.changePct);
-  if (Number.isFinite(direct)) return direct;
-  return pctFromPrevClose(row.price, row.prevClose) ?? 0;
+  if (row.changePct != null && Number.isFinite(Number(row.changePct))) return Number(row.changePct);
+  return pctFromPrevClose(row.price, row.prevClose);
 }
 
 function quoteOhlcPct(row) {
   const close = quoteClosePct(row);
+  if (close == null) return null;
   const open = pctFromPrevClose(row.open, row.prevClose) ?? close;
   const high = pctFromPrevClose(row.high, row.prevClose) ?? Math.max(open, close);
   const low = pctFromPrevClose(row.low, row.prevClose) ?? Math.min(open, close);
@@ -260,9 +50,10 @@ function weightedAverage(rows, getter) {
   return totalWeight ? weighted / totalWeight : 0;
 }
 
+// 沒有任何報價的類股回傳 { label, empty: true }，圖上顯示「--」。
 function summarizeQuoteRows(label, rows) {
-  if (!rows.length) return { label, open: 0, high: 0, low: 0, close: 0 };
-  const ohlcRows = rows.map((row) => ({ row, ohlc: quoteOhlcPct(row) }));
+  const ohlcRows = rows.map((row) => ({ row, ohlc: quoteOhlcPct(row) })).filter((item) => item.ohlc);
+  if (!ohlcRows.length) return { label, empty: true };
   const open = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.open);
   const close = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.close);
   const high = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.high);
@@ -302,30 +93,25 @@ function quoteRowsForCategories(topStocks, marketMap) {
 
 function buildCategoryQuoteStats(taiex, topStocks, marketMap) {
   const rows = quoteRowsForCategories(topStocks, marketMap);
+  // 第一根是加權指數（現貨），不是台指期。
   const taiexOhlc = quoteOhlcPct(taiex);
   const stats = [
-    {
-      label: '台指',
-      open: +taiexOhlc.open.toFixed(2),
-      high: +taiexOhlc.high.toFixed(2),
-      low: +taiexOhlc.low.toFixed(2),
-      close: +taiexOhlc.close.toFixed(2)
-    },
+    taiexOhlc
+      ? {
+        label: '加權',
+        open: +taiexOhlc.open.toFixed(2),
+        high: +taiexOhlc.high.toFixed(2),
+        low: +taiexOhlc.low.toFixed(2),
+        close: +taiexOhlc.close.toFixed(2)
+      }
+      : { label: '加權', empty: true },
     summarizeQuoteRows('電子', rows.filter(isElectronicRow)),
     summarizeQuoteRows('金融', rows.filter(isFinancialRow)),
     summarizeQuoteRows('傳產', rows.filter(isTraditionalRow))
   ];
-  stats.push(summarizeQuoteRows('摩台', rows));
+  // 全部有報價成分股的加權平均（不是 MSCI 摩台指數；之後有摩台成分股名單再另加）。
+  stats.push(summarizeQuoteRows('全體', rows));
   return stats;
-}
-
-function liveQuoteMap(marketMap) {
-  const rows = Array.isArray(marketMap) ? marketMap : [];
-  return new Map(
-    rows
-      .filter((row) => row?.source === 'yahoo' && Number.isFinite(Number(row.changePct)))
-      .map((row) => [String(row.code), row])
-  );
 }
 
 function twseTickSize(price) {
@@ -339,15 +125,14 @@ function twseTickSize(price) {
   return 5;
 }
 
-function roundToTick(price) {
-  const tick = twseTickSize(price);
-  return +(Math.round(Number(price) / tick) * tick).toFixed(2);
-}
-
+// 證交所規則：漲停 = 昨收×1.1 未滿一檔無條件捨去；跌停 = 昨收×0.9 未滿一檔無條件進位。
 function limitPrice(prevClose, direction) {
   const base = Number(prevClose);
   if (!Number.isFinite(base) || base <= 0) return null;
-  return roundToTick(base * (direction === 'up' ? 1.1 : 0.9));
+  const raw = base * (direction === 'up' ? 1.1 : 0.9);
+  const tick = twseTickSize(raw);
+  const steps = direction === 'up' ? Math.floor(raw / tick + 1e-9) : Math.ceil(raw / tick - 1e-9);
+  return +(steps * tick).toFixed(2);
 }
 
 function isLimitQuote(row, direction) {
@@ -381,8 +166,9 @@ function isFallingQuote(row) {
   return Number(row?.changePct) < 0;
 }
 
-function buildConstituentPieStats(constituentsByCode, marketMap, denominator) {
-  const quoteByCode = liveQuoteMap(marketMap);
+// 成分股漲停／上漲／平盤／下跌／跌停／無資料的檔數，直接給圓餅圖用。沒有報價的另成一塊（深灰斜線），不算平盤。
+function buildConstituentPieSegments(constituentsByCode, marketMap, denominator) {
+  const quoteByCode = liveMarketMapQuotes(marketMap);
   const codes = Object.keys(constituentsByCode);
   let up = 0;
   let down = 0;
@@ -392,12 +178,10 @@ function buildConstituentPieStats(constituentsByCode, marketMap, denominator) {
   codes.forEach((code) => {
     const quote = quoteByCode.get(String(code));
     if (!quote) return;
-    const isLimitUp = isLimitQuote(quote, 'up');
-    const isLimitDown = isLimitQuote(quote, 'down');
-    if (isLimitUp) {
+    if (isLimitQuote(quote, 'up')) {
       limitUp += 1;
       up += 1;
-    } else if (isLimitDown) {
+    } else if (isLimitQuote(quote, 'down')) {
       limitDown += 1;
       down += 1;
     } else if (isRisingQuote(quote)) {
@@ -407,32 +191,21 @@ function buildConstituentPieStats(constituentsByCode, marketMap, denominator) {
     }
   });
 
-  const base = denominator || codes.length || 1;
-  const flat = Math.max(0, base - up - down);
-  const upOnly = Math.max(0, up - limitUp);
-  const downOnly = Math.max(0, down - limitDown);
-  return {
-    upPct: upOnly,
-    downPct: downOnly,
-    flatPct: flat,
-    upCount: up,
-    downCount: down,
-    limitUpCount: limitUp,
-    limitDownCount: limitDown,
-    flatCount: flat,
-    total: base,
-    segments: [
-      { value: limitUp, color: 'rgb(244,65,110)' },
-      { value: upOnly, color: 'rgb(244,134,124)' },
-      { value: flat, color: '#d0d0d0' },
-      { value: downOnly, color: 'rgb(139,195,74)' },
-      { value: limitDown, color: 'rgb(37,210,129)' }
-    ]
-  };
+  const quoted = codes.filter((code) => quoteByCode.has(String(code))).length;
+  const noData = Math.max(0, (denominator || codes.length) - quoted);
+  const flat = Math.max(0, quoted - up - down);
+  return [
+    { value: limitUp, color: 'rgb(244,65,110)' },
+    { value: up - limitUp, color: 'rgb(244,134,124)' },
+    { value: flat, color: '#d0d0d0' },
+    { value: down - limitDown, color: 'rgb(139,195,74)' },
+    { value: limitDown, color: 'rgb(37,210,129)' },
+    { value: noData, color: '#2a2e38', hatch: true }
+  ];
 }
 
 function buildCombinedAttackStats(marketMap) {
-  const quoteByCode = liveQuoteMap(marketMap);
+  const quoteByCode = liveMarketMapQuotes(marketMap);
   const codes = [...new Set([...Object.keys(TW50_BY_CODE), ...Object.keys(MID100_BY_CODE)])];
   let up = 0;
   let down = 0;
@@ -448,166 +221,11 @@ function buildCombinedAttackStats(marketMap) {
     else if (isLimitQuote(quote, 'down')) limitDown += 1;
   });
 
-  return { up, down, limitUp, limitDown, total: 150 };
+  return { up, down, limitUp, limitDown };
 }
 
-// estimateSessionVolume：函式用途註解，說明此處封裝一段可重用的流程。
-function estimateSessionVolume(currentVolume) {
-  const now = new Date();
-  const minute = now.getHours() * 60 + now.getMinutes();
-  const start = 9 * 60;
-  const end = 13 * 60 + 30;
-  if (minute <= start) return currentVolume;
-  if (minute >= end) return currentVolume;
-  const progress = clamp((minute - start) / (end - start), 0.08, 1);
-  return currentVolume / progress;
-}
-
-// driftAttack：函式用途註解，說明此處封裝一段可重用的流程。
-// drawEstimateSystem：函式用途註解，說明此處封裝一段可重用的流程。
-function drawEstimateSystem(canvas, taiex, futures) {
-  // 段落說明：取得 Canvas 2D context 進行繪圖。
-  const ctx = canvas.getContext('2d');
-  const { w, h } = resolveCanvasSize(canvas, { maxWidth: 340, minWidth: 260, height: 286 });
-  // 段落說明：清除上一輪 Canvas 繪圖內容。
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#07090e';
-  ctx.fillRect(0, 0, w, h);
-
-  const top = 18;
-  const split = Math.floor(h * 0.62);
-  const bottomTop = split + 12;
-  const bottomTitleY = h - 18;
-  const left = 38;
-  const right = 38;
-  const plotW = w - left - right;
-  const plotH = split - top - 10;
-  const bottomH = bottomTitleY - bottomTop - 8;
-
-  const points = 64;
-  const phase = Date.now() / 6000;
-  const volMin = 1500;
-  const volMax = 2300;
-  const priceCenter = Number(taiex.price || taiex.open || 10880);
-  const priceMin = priceCenter - 35;
-  const priceMax = priceCenter + 35;
-  const spreadCenter = Number(futures.price || 0) - Number(taiex.price || 0);
-
-  // x：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const x = (i) => left + (i / (points - 1 || 1)) * plotW;
-  // yVol：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const yVol = (v) => top + (1 - (v - volMin) / (volMax - volMin || 1)) * plotH;
-  // yPrice：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const yPrice = (v) => top + (1 - (v - priceMin) / (priceMax - priceMin || 1)) * plotH;
-  // ySpread：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const ySpread = (v) => bottomTop + (1 - (v + 65) / (25 + 65)) * bottomH;
-
-  const volSeries = [];
-  const priceSeries = [];
-  const spreadSeries = [];
-  for (let i = 0; i < points; i += 1) {
-    const t = i / (points - 1);
-    const vol = 2120 - 430 * t + Math.sin(t * 9 + phase * 0.3) * 75 + Math.sin(t * 21 + phase) * 18;
-    const price = priceCenter + Math.sin(t * 7 + phase) * 8 + Math.sin(t * 17 + phase * 0.4) * 3;
-    const spread = spreadCenter - 28 + Math.sin(t * 13 + phase * 0.8) * 8 + (Math.random() - 0.5) * 6;
-    volSeries.push(clamp(vol, volMin + 20, volMax - 10));
-    priceSeries.push(clamp(price, priceMin + 1, priceMax - 1));
-    spreadSeries.push(clamp(spread, -65, 25));
-  }
-
-  // Frame
-  ctx.strokeStyle = '#bf7f12';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(left, top, plotW, plotH);
-  ctx.strokeRect(left, bottomTop, plotW, bottomH);
-
-  // Top area fill (現貨估量)
-  ctx.beginPath();
-  volSeries.forEach((v, i) => {
-    const px = x(i);
-    const py = yVol(v);
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  });
-  ctx.lineTo(x(points - 1), yVol(volMin));
-  ctx.lineTo(x(0), yVol(volMin));
-  ctx.closePath();
-  ctx.fillStyle = '#1d86ea';
-  ctx.fill();
-
-  // Price line
-  ctx.beginPath();
-  priceSeries.forEach((v, i) => {
-    const px = x(i);
-    const py = yPrice(v);
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  });
-  ctx.strokeStyle = '#30d25f';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Baseline
-  ctx.strokeStyle = '#f1d03a';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(left, yVol(1660));
-  ctx.lineTo(left + plotW, yVol(1660));
-  ctx.stroke();
-
-  // Bottom spread bars
-  ctx.fillStyle = '#8bc34a';
-  ctx.fillRect(left, ySpread(-11), plotW, ySpread(-65) - ySpread(-11));
-  const barW = Math.max(2, plotW / points - 1);
-  ctx.fillStyle = '#0d1218';
-  spreadSeries.forEach((v, i) => {
-    const px = x(i) - barW / 2;
-    const py = ySpread(v);
-    const y0 = ySpread(-11);
-    const yy = Math.min(py, y0);
-    const hh = Math.abs(py - y0);
-    ctx.fillRect(px, yy, barW, hh);
-  });
-
-  // Axes labels
-  const topTicksL = [2300, 2140, 1980, 1820, 1660, 1500];
-  ctx.fillStyle = '#d39b29';
-  ctx.font = '11px "JetBrains Mono"';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  topTicksL.forEach((v) => ctx.fillText(String(v), left - 6, yVol(v)));
-
-  const topTicksR = [priceMax, priceCenter + 15, priceCenter, priceCenter - 15, priceMin];
-  ctx.textAlign = 'left';
-  topTicksR.forEach((v) => ctx.fillText(String(Math.round(v)), left + plotW + 6, yPrice(v)));
-
-  const btTicks = [25, 7, -11, -29, -47, -65];
-  ctx.textAlign = 'right';
-  btTicks.forEach((v) => ctx.fillText(String(v), left - 6, ySpread(v)));
-  ctx.textAlign = 'left';
-  btTicks.forEach((v) => ctx.fillText(String(v), left + plotW + 6, ySpread(v)));
-
-  // Time labels
-  const labels = ['09:00', '10:00', '11:00', '12:00', '13:00'];
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  labels.forEach((label, i) => {
-    const px = left + (i / (labels.length - 1 || 1)) * plotW;
-    ctx.fillText(label, px, split + 2);
-  });
-
-  // Titles
-  ctx.fillStyle = '#f2f6ff';
-  ctx.font = '700 18px "Noto Sans TC"';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText('現貨估量系統', w / 2, 2);
-  ctx.fillText('價差走勢圖', w / 2, bottomTitleY);
-}
-
-// mount：函式用途註解，說明此處封裝一段可重用的流程。
+// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
 export function mount(container) {
-  // 段落說明：建立此區塊的 DOM 結構。
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 2｜台股溫度計</h2><span class="page-clock" id="p2-clock"></span></div>
     <div class="p2-layout" id="p2-layout">
@@ -622,52 +240,34 @@ export function mount(container) {
   const left = container.querySelector('#p2-left');
   const center = container.querySelector('#p2-center');
   const bottom = container.querySelector('#p2-bottom');
-  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (el, name, fallback) => {
     const value = parseFloat(getComputedStyle(el).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
   };
 
   const p1 = new Panel(left, { badge: '1', title: '加權/台指/價差' }); p1.root.classList.add('p2-resize');
-  const p2 = new Panel(left, { badge: '2', title: '試搓預測' }); p2.root.classList.add('p2-resize');
-  const p10 = new Panel(left, { badge: '10', title: '現貨估量系統 / 價差走勢圖' }); p10.root.classList.add('p2-resize');
-  const p3 = new Panel(left, { badge: '3', title: '法人資金流向' }); p3.root.classList.add('p2-resize');
-
   p1.setContent('<div class="p2-flow" id="p2-main"></div>');
-  p2.setContent('<div class="p2-flow" id="p2-spread"></div>');
-  p10.setContent('<canvas id="p2-est-canvas" class="p2-est-canvas"></canvas>');
-  p3.setContent('<div class="p2-flow" id="p2-flow"></div>');
 
-  const p4 = new Panel(center, { badge: '4', title: '時鐘與多空攻擊' }); p4.root.classList.add('p2-resize');
-  const p5 = new Panel(center, { badge: '5', title: '類股強弱' }); p5.root.classList.add('p2-resize');
+  const p4 = new Panel(center, { badge: '2', title: '時鐘與多空攻擊' }); p4.root.classList.add('p2-resize');
+  const p5 = new Panel(center, { badge: '3', title: '類股強弱' }); p5.root.classList.add('p2-resize');
 
   const centerSplit = container.querySelector('#p2-center-split');
   if (centerSplit && p5.root?.parentNode === center) {
     center.insertBefore(centerSplit, p5.root);
   }
 
-  // 段落說明：建立新的 DOM 節點。
   const clockBlock = document.createElement('div');
-  // 段落說明：更新 DOM 內容。
   clockBlock.innerHTML = `
     <div class="p2-bigclock" id="p2-bigclock">--:--:--</div>
-    <div class="p2-vol-grid">
-      <div class="p2-vol-box">加權昨日量<br><strong id="p2-vol-y"></strong></div>
-      <div class="p2-vol-box">加權預估量<br><strong id="p2-vol-e"></strong></div>
-    </div>
+    <div class="p2-vol-box">加權預估量<br><strong id="p2-vol-e"></strong></div>
   `;
-  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(clockBlock);
 
-  // 段落說明：建立新的 DOM 節點。
   const bullWrap = document.createElement('div');
   bullWrap.className = 'p2-gauge-wrap';
-  // 段落說明：建立新的 DOM 節點。
   const bearWrap = document.createElement('div');
   bearWrap.className = 'p2-gauge-wrap';
-  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(bullWrap);
-  // 段落說明：將建立好的節點掛回頁面。
   p4.body.appendChild(bearWrap);
 
   const gaugeBull = new Gauge(bullWrap, {
@@ -703,40 +303,25 @@ export function mount(container) {
         <div class="p2-pie-card p2-pie-card--large" data-key="台灣50"><div class="p2-pie-title">台灣50</div><canvas></canvas></div>
         <div class="p2-pie-card p2-pie-card--large" data-key="中型100"><div class="p2-pie-title">中型100</div><canvas></canvas></div>
       </div>
-      <div class="p2-pie-bottom">
-        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="電子"><div class="p2-pie-title">電子</div><canvas></canvas></div>
-        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="金融"><div class="p2-pie-title">金融</div><canvas></canvas></div>
-        <div class="p2-pie-card p2-pie-card--small is-disabled" data-key="傳產"><div class="p2-pie-title">傳產</div><canvas></canvas></div>
-      </div>
     </div>
   `);
 
-  const p6 = new Panel(bottom, { badge: '6', title: '前十大權值股' }); p6.root.classList.add('p2-resize');
-  const p7 = new Panel(bottom, { badge: '7', title: '類股 K 線（台指/電子/金融/傳產/摩台）' }); p7.root.classList.add('p2-resize');
-  const p8 = new Panel(bottom, { badge: '8', title: '類股今日漲跌幅' }); p8.root.classList.add('p2-resize');
+  const p6 = new Panel(bottom, { badge: '4', title: '前十大權值股' }); p6.root.classList.add('p2-resize');
+  const p7 = new Panel(bottom, { badge: '5', title: '類股 K 線（加權/電子/金融/傳產/全體）' }); p7.root.classList.add('p2-resize');
+  const p8 = new Panel(bottom, { badge: '6', title: '類股今日漲跌幅' }); p8.root.classList.add('p2-resize');
   p6.setContent('<div class="p2-chart-wrap p2-chart-wrap--w120"><canvas id="p2-c6" class="p2-chart-canvas"></canvas></div>');
   p7.setContent('<div class="p2-chart-wrap p2-chart-wrap--w90"><canvas id="p2-c7" class="p2-chart-canvas"></canvas></div>');
   p8.setContent('<div class="p2-chart-wrap p2-chart-wrap--w90"><canvas id="p2-c8" class="p2-chart-canvas"></canvas></div>');
 
-  const yesterdayVolume = Number(store.get('taiex').volume) || 0;
-  const initialAttackStats = buildCombinedAttackStats(store.get('marketMap'));
-  const attackState = {
-    bullValue: initialAttackStats.limitUp,
-    bullMax: initialAttackStats.up,
-    bullActive: initialAttackStats.up,
-    bearValue: initialAttackStats.limitDown,
-    bearMax: initialAttackStats.down,
-    bearActive: initialAttackStats.down,
-    scaleMax: initialAttackStats.total
-  };
-  let page2QuoteTimer = null;
-
-  const refreshPage2Quotes = async (force = false) => {
-    try {
-      await updateYahooTaiexOnce({ force });
-    } catch (error) {
-      console.warn('[page2] quote refresh failed:', error);
-    }
+  // 各區塊自己判斷：拿不到資料的區塊灰掉並說明（DDE 時區塊 1 仍正常）。
+  // 多空攻擊、成分股圓餅要市場地圖（來源清單的 stocks）；權值股與類股統計在模擬資料下用模擬的十大權值股。
+  const renderSourceNote = (source = getDashboardDataSource()) => {
+    const marketStats = Boolean(sourceInfo(source).stocks);
+    const stockQuotes = marketStats || source === 'mock';
+    [[p4, marketStats], [p5, marketStats], [p6, stockQuotes], [p7, stockQuotes], [p8, stockQuotes]].forEach(([panel, supported]) => {
+      panel.root.classList.toggle('is-unsupported', !supported);
+      panel.body.dataset.note = '此資料來源沒有市場統計';
+    });
   };
 
   const clockEl = container.querySelector('#p2-bigclock');
@@ -752,8 +337,6 @@ export function mount(container) {
     min: 300,
     max: 900
   });
-  // clockResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
   const clockResize = new ResizeObserver(() => {
     const rect = p4.body.getBoundingClientRect();
     const size = Math.max(32, Math.min(96, Math.floor(Math.min(rect.width * 0.16, rect.height * 0.18))));
@@ -761,105 +344,58 @@ export function mount(container) {
   });
   clockResize.observe(p4.body);
 
-  // renderMain：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+  // 台指期只認 marketFeed 從券商橋接寫進 futuresFull 的報價（帶 sourceUpdatedAt）；Yahoo 沒有台指期，顯示 '--'。
   const renderMain = () => {
     const t = store.get('taiex');
-    const f = store.get('futures');
-    const spread = +(f.price - t.price).toFixed(2);
-    const estimated = estimateSessionVolume(Number(t.volume) || 0);
+    const f = store.get('futuresFull') || {};
+    const hasFutures = Number.isFinite(Number(f.price)) && Number.isFinite(f.sourceUpdatedAt);
+    const spread = hasFutures && Number.isFinite(Number(t.price)) ? +(f.price - t.price).toFixed(2) : null;
+    const volEstimate = t.volEstimate == null ? NaN : Number(t.volEstimate);
 
-    // 段落說明：更新 DOM 內容。
     container.querySelector('#p2-main').innerHTML = `
-      <div class="p2-flow-row"><span>加權指數</span><strong class="${c(t.change)}">${t.price} / ${t.change}</strong></div>
-      <div class="p2-flow-row"><span>台指期</span><strong class="${c(f.change)}">${f.price} / ${f.change}</strong></div>
-      <div class="p2-flow-row"><span>價差</span><strong class="${c(spread)}">${spread}</strong></div>
+      <div class="p2-flow-row"><span>加權指數</span><strong class="${c(t.change)}">${t.price ?? '--'} / ${t.change ?? '--'}</strong></div>
+      <div class="p2-flow-row"><span>台指期</span><strong class="${c(hasFutures ? f.change : null)}">${hasFutures ? `${f.price} / ${f.change}` : '--'}</strong></div>
+      <div class="p2-flow-row"><span>價差</span><strong class="${c(spread)}">${spread ?? '--'}</strong></div>
     `;
-
-    // 段落說明：更新 DOM 內容。
-    container.querySelector('#p2-spread').innerHTML = `
-      <div class="p2-flow-row"><span>試搓預測價</span><strong class="${c(t.change)}">${t.price.toFixed(2)}</strong></div>
-      <div class="p2-flow-row"><span>試搓漲跌</span><strong class="${c(t.change)}">${t.change.toFixed(2)}</strong></div>
-      <div class="p2-flow-row"><span>擬合估量</span><strong>${(t.volume * 0.07).toFixed(2)}</strong></div>
-      <div class="p2-flow-row"><span>內外盤差</span><strong class="${c(spread)}">${(-spread).toFixed(0)}</strong></div>
-    `;
-
-    container.querySelector('#p2-vol-y').textContent = yesterdayVolume.toFixed(2);
-    container.querySelector('#p2-vol-e').textContent = estimated.toFixed(2);
-    drawEstimateSystem(container.querySelector('#p2-est-canvas'), t, f);
+    container.querySelector('#p2-vol-e').textContent = Number.isFinite(volEstimate) ? Math.round(volEstimate).toLocaleString('zh-TW') : '--';
   };
 
-  // renderFlow：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const renderFlow = (m) => {
-    // 段落說明：更新 DOM 內容。
-    container.querySelector('#p2-flow').innerHTML = `
-      <div class="p2-flow-row"><span>大戶（估/實）</span><strong class="${c(m.bigPlayer.actual)}">${m.bigPlayer.estimated} / ${m.bigPlayer.actual}</strong></div>
-      <div class="p2-flow-row"><span>中實戶（估/實）</span><strong class="${c(m.midPlayer.actual)}">${m.midPlayer.estimated} / ${m.midPlayer.actual}</strong></div>
-      <div class="p2-flow-row"><span>其他（估/實）</span><strong class="${c(m.other.actual)}">${m.other.estimated} / ${m.other.actual}</strong></div>
-    `;
-  };
-
-  // renderAttackGauge：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const renderAttackGauge = () => {
+  const renderAttackGauges = () => {
+    const stats = buildCombinedAttackStats(store.get('marketMap'));
     gaugeBull.update({
-      value: attackState.bullValue,
-      activeValue: attackState.bullActive,
-      segmentValue: attackState.bullValue,
-      displayValue: attackState.bullValue,
-      displayMax: attackState.bullMax,
+      value: stats.limitUp,
+      activeValue: stats.up,
+      segmentValue: stats.limitUp,
+      displayValue: stats.limitUp,
+      displayMax: stats.up,
       title: '多方攻擊'
     });
     gaugeBear.update({
-      value: attackState.bearValue,
-      activeValue: attackState.bearActive,
-      segmentValue: attackState.bearValue,
-      displayValue: attackState.bearValue,
-      displayMax: attackState.bearMax,
+      value: stats.limitDown,
+      activeValue: stats.down,
+      segmentValue: stats.limitDown,
+      displayValue: stats.limitDown,
+      displayMax: stats.down,
       title: '空方攻擊'
     });
   };
 
-  const refreshAttackStateFromMarketMap = () => {
-    const stats = buildCombinedAttackStats(store.get('marketMap'));
-    attackState.bullValue = clamp(stats.limitUp, 0, stats.total);
-    attackState.bearValue = clamp(stats.limitDown, 0, stats.total);
-    attackState.bullMax = clamp(stats.up, 0, stats.total);
-    attackState.bearMax = clamp(stats.down, 0, stats.total);
-    attackState.bullActive = attackState.bullMax;
-    attackState.bearActive = attackState.bearMax;
-    attackState.scaleMax = stats.total;
-    renderAttackGauge();
-  };
-
-  // renderSectors：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  const renderSectors = (src) => {
-    // findSector：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-    const findSector = (name) => src.find((s) => s.name === name);
-    const fin = findSector('金融');
-    const ele = findSector('電子');
-    const tra = findSector('傳產') || findSector('航運');
-
+  const renderPies = () => {
     const marketMap = store.get('marketMap');
-    const pies = {
-      台灣50: buildConstituentPieStats(TW50_BY_CODE, marketMap, 50),
-      中型100: buildConstituentPieStats(MID100_BY_CODE, marketMap, 100)
-    };
-
-    Object.entries(pies).forEach(([key, value]) => {
+    [['台灣50', TW50_BY_CODE, 50], ['中型100', MID100_BY_CODE, 100]].forEach(([key, constituents, total]) => {
       const canvas = p5.body.querySelector(`.p2-pie-card[data-key="${key}"] canvas`);
-      if (!canvas) return;
-      drawSectorPie(canvas, value, { size: key === '台灣50' || key === '中型100' ? 240 : 160 });
+      if (canvas) drawSectorPie(canvas, buildConstituentPieSegments(constituents, marketMap, total), 240);
     });
   };
 
-  // renderCharts：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const renderCharts = () => {
     const stocks = store.get('topStocks');
-    // top10：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
+    // 還沒有報價的股票不畫長條、標「--」，不畫成 0%。
     const top10 = TOP10_CODES.map((code) => stocks.find((s) => s.code === code)).filter(Boolean);
 
     drawBars(
       container.querySelector('#p2-c6'),
-      top10.map((s) => ({ label: s.code, subLabel: s.name, value: s.changePct })),
+      top10.map((s) => ({ label: s.code, subLabel: s.name, value: Number.isFinite(s.changePct) ? s.changePct : null })),
       { axisBottom: 44, maxWidth: 672 }
     );
 
@@ -870,102 +406,54 @@ export function mount(container) {
     drawCategoryCandle(container.querySelector('#p2-c7'), categoryStats, { minV: -4, maxV: 4, ticks: [-4, -2, 0, 2, 4], maxWidth: 504 });
     drawBars(
       container.querySelector('#p2-c8'),
-      categoryStats.map((item) => ({ label: item.label, value: item.close })),
+      categoryStats.map((item) => ({ label: item.label, value: item.empty ? null : item.close })),
       { ticks: [-2, -1, 0, 1, 2], maxWidth: 504 }
     );
   };
 
+  renderSourceNote();
   renderMain();
-  renderFlow(store.get('moneyFlow'));
-  refreshAttackStateFromMarketMap();
-  renderSectors(store.get('sectors'));
+  renderAttackGauges();
+  renderPies();
   renderCharts();
-  refreshPage2Quotes(true);
-  page2QuoteTimer = setInterval(refreshPage2Quotes, 10000);
 
-  // estResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
-  const estResize = new ResizeObserver(() => {
-    const t = store.get('taiex');
-    const f = store.get('futures');
-    drawEstimateSystem(container.querySelector('#p2-est-canvas'), t, f);
-  });
-  estResize.observe(p10.body);
-
-  // pieResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
-  const pieResize = new ResizeObserver(() => {
-    renderSectors(store.get('sectors'));
-  });
+  const pieResize = new ResizeObserver(renderPies);
   pieResize.observe(p5.body);
 
-  // chartResize：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：監聽容器尺寸變化，重新計算或重繪內容。
-  const chartResize = new ResizeObserver(() => {
-    renderCharts();
-  });
+  const chartResize = new ResizeObserver(renderCharts);
   chartResize.observe(bottom);
 
-  // u1：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u1 = store.subscribe('taiex', () => {
-    renderMain();
-    renderCharts();
-  });
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u2 = store.subscribe('futures', renderMain);
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u3 = store.subscribe('moneyFlow', renderFlow);
-  // u4：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u4 = store.subscribe('sectors', () => {
-    renderSectors(store.get('sectors'));
-    renderCharts();
-  });
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u5 = store.subscribe('topStocks', renderCharts);
-  const u7 = store.subscribe('marketMap', () => {
-    refreshAttackStateFromMarketMap();
-    renderSectors(store.get('sectors'));
-    renderCharts();
-  });
-  // u6：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const u6 = store.subscribe('bullBear', () => {});
+  const unsubs = [
+    store.subscribe('taiex', () => {
+      renderMain();
+      renderCharts();
+    }),
+    store.subscribe('futuresFull', renderMain),
+    store.subscribe('topStocks', renderCharts),
+    store.subscribe('marketMap', () => {
+      renderAttackGauges();
+      renderPies();
+      renderCharts();
+    }),
+    subscribeDashboardDataSource(renderSourceNote)
+  ];
 
-  // attackTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：建立定時更新流程。
-  // clockTimer：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-  // 段落說明：建立定時更新流程。
   const clockTimer = setInterval(() => {
     const t = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
     container.querySelector('#p2-clock').textContent = t;
     container.querySelector('#p2-bigclock').textContent = t;
   }, 1000);
 
-  cleanup = () => {
-    // 段落說明：清除定時器，避免頁面卸載後繼續執行。
+  return () => {
     clearInterval(clockTimer);
-    if (page2QuoteTimer) clearInterval(page2QuoteTimer);
-    // 段落說明：清除定時器，避免頁面卸載後繼續執行。
     clockResize.disconnect();
-    estResize.disconnect();
     pieResize.disconnect();
     chartResize.disconnect();
     stopMainSplit();
     stopCenterSplit();
-    u1(); u2(); u3(); u4(); u5(); u6(); u7();
+    unsubs.forEach((unsub) => unsub());
     gaugeBull.destroy();
     gaugeBear.destroy();
-    p1.destroy(); p2.destroy(); p10.destroy(); p3.destroy(); p4.destroy(); p5.destroy(); p6.destroy(); p7.destroy(); p8.destroy();
+    [p1, p4, p5, p6, p7, p8].forEach((panel) => panel.destroy());
   };
-
-  // 段落說明：回傳目前頁面的清理函式。
-  return cleanup;
-}
-
-// unmount：函式用途註解，說明此處封裝一段可重用的流程。
-export function unmount() {
-  cleanup();
-  cleanup = () => {};
 }

@@ -253,3 +253,9 @@
   height: 130px;
   display: block;
 }
+
+/* 多空關卡算法切換（樞紐點／振幅倍數／固定點數） */
+.p1-levels-ctrl { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.p1-levels-ctrl select { height: 26px; }
+.p1-levels-ctrl input { height: 26px; flex: 1; min-width: 0; }
+.p1-levels-ctrl input[hidden] { display: none; }

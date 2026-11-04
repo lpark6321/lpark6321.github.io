@@ -22,7 +22,6 @@ export class BaseMarketDataProvider {
     this.lastRequestAt = 0;
   }
 
-  // getLastData：方法用途註解，處理此元件或類別的一段行為。
   getLastData() {
     return this.cache.data;
   }
@@ -35,7 +34,6 @@ export class BaseMarketDataProvider {
     return now - this.lastRequestAt < this.minRequestGap;
   }
 
-  // setCache：方法用途註解，處理此元件或類別的一段行為。
   setCache(data) {
     this.cache = {
       timestamp: Date.now(),
@@ -43,7 +41,6 @@ export class BaseMarketDataProvider {
     };
   }
 
-  // createFallbackRecord：方法用途註解，處理此元件或類別的一段行為。
   createFallbackRecord(quote, extra = {}) {
     return {
       symbol: quote.symbol,
@@ -52,12 +49,10 @@ export class BaseMarketDataProvider {
     };
   }
 
-  // mergeRecords：方法用途註解，處理此元件或類別的一段行為。
   mergeRecords(recordsBySymbol) {
     return this.quotes.map((quote) => recordsBySymbol.get(quote.symbol) || this.createFallbackRecord(quote));
   }
 
-  // withCache：方法用途註解，處理此元件或類別的一段行為。
   async withCache({ force = false } = {}, requestFn) {
     const now = Date.now();
 
@@ -67,7 +62,8 @@ export class BaseMarketDataProvider {
 
     if (this.inFlight) {
       if (!force) return this.inFlight;
-      return this.inFlight.then(() => this.withCache({ force: true }, requestFn));
+      // 強制刷新要等目前請求結束後重抓；目前請求失敗也一樣要重抓，不能直接沿用舊錯誤。
+      return this.inFlight.catch(() => {}).then(() => this.withCache({ force: true }, requestFn));
     }
 
     if (!force && this.shouldThrottle(now) && this.cache.data) {
@@ -88,8 +84,11 @@ export class BaseMarketDataProvider {
     return this.inFlight;
   }
 
-  // fetchQuotes：方法用途註解，處理此元件或類別的一段行為。
-  async fetchQuotes() {
-    throw new Error('fetchQuotes() must be implemented by a concrete provider');
+  async fetchQuotes(options = {}) {
+    return this.withCache(options, () => this.requestRemoteData());
+  }
+
+  async requestRemoteData() {
+    throw new Error('requestRemoteData() must be implemented by a concrete provider');
   }
 }

@@ -26,7 +26,7 @@
         <div class="status-pill" id="status-pill">Booting</div>
         <div class="status-stack">
           <span>Polling</span>
-          <strong>10 sec</strong>
+          <strong id="poll-label">5 sec</strong>
         </div>
         <div class="status-stack">
           <span>Provider</span>
@@ -44,6 +44,10 @@
             <option value="finmind">FinMind</option>
             <option value="taifex">TAIFEX Daily Tick</option>
           </select>
+        </label>
+        <label class="field">
+          <span>Polling</span>
+          <select id="poll-select"></select>
         </label>
         <label class="field field--wide is-hidden" id="finmind-token-field">
           <span>FinMind Token</span>

@@ -23,6 +23,7 @@ public sealed class DdeClient : IDisposable
     private const int CF_TEXT = 1;
     private const int XTYP_REQUEST = 0x20B0;
     private const int TIMEOUT_MS = 3000;
+    private const int DMLERR_NOTPROCESSED = 0x4009;
 
     private delegate IntPtr DdeCallback(
         int uType, int uFmt, IntPtr hconv, IntPtr hsz1, IntPtr hsz2,
@@ -33,6 +34,9 @@ public sealed class DdeClient : IDisposable
     private IntPtr serviceHandle;
     private IntPtr topicHandle;
     private IntPtr conversation;
+
+    // Set when a request fails for a reason other than an unknown item, e.g. the quote app restarted.
+    public bool Broken { get; private set; }
 
     [DllImport("user32.dll", EntryPoint = "DdeInitializeA", CharSet = CharSet.Ansi)]
     private static extern int DdeInitialize(ref int pidInst, DdeCallback pfnCallback, int afCmd, int ulRes);
@@ -106,6 +110,7 @@ public sealed class DdeClient : IDisposable
             if (dataHandle == IntPtr.Zero)
             {
                 int ddeError = DdeGetLastError(instanceId);
+                if (ddeError != DMLERR_NOTPROCESSED) Broken = true;
                 throw new InvalidOperationException("DdeClientTransaction failed. Item=" + item + ", DDE last error=" + ddeError + ".");
             }
 
@@ -150,11 +155,11 @@ public sealed class DdeClient : IDisposable
 "@
 
 $script:clients = @{}
-$script:candles = @{}
-$script:lastVolumeBySymbol = @{}
+$script:series = @{}  # "symbol:timeframe" -> OrderedDictionary of bucket -> candle
+$script:lastVolumeBySeries = @{}
+$MaxCandlesPerSeries = 1200  # 20 min of 1s or 20 h of 1m; keeps each response small
+$AllowedOrigins = @("http://127.0.0.1:8000", "http://localhost:8000", "https://lpark6321.github.io")
 $script:taishinFieldCodes = @{
-  ID = "2020"
-  Name = "2020"
   Bid = "101"
   Ask = "102"
   Price = "125"
@@ -165,18 +170,24 @@ $script:taishinFieldCodes = @{
   Low = "131"
   Volume = "404"
 }
+# shortcut: spot price 2020 comes from the old launcher note "spot price=#001.2020"; confirm it against Taishin's MMSDDE field list.
 $script:taishinSpotFieldCodes = @{
-  ID = "2020"
-  Name = "2020"
+  Price = "2020"
   AmountYi = "424"
 }
 
 function Get-DdeClient($topic = $Topic) {
   $key = "$Service|$topic"
-  if (-not $script:clients.ContainsKey($key)) {
-    $script:clients[$key] = [DdeClient]::new($Service, $topic)
+  $client = $script:clients[$key]
+  if ($null -ne $client -and $client.Broken) {
+    $client.Dispose()
+    $client = $null
   }
-  return $script:clients[$key]
+  if ($null -eq $client) {
+    $client = [DdeClient]::new($Service, $topic)
+    $script:clients[$key] = $client
+  }
+  return $client
 }
 
 function Dispose-DdeClients {
@@ -195,28 +206,12 @@ function Convert-ToNumber($value) {
   return $null
 }
 
-function Get-QuoteTime($text) {
-  $now = Get-Date
-  $time = [string]$text
-  $parsed = [datetime]::MinValue
-  if ([datetime]::TryParse($time, [ref]$parsed)) {
-    if ($parsed.Year -le 1900) {
-      $candidate = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $parsed.Hour -Minute $parsed.Minute -Second $parsed.Second
-      if ($candidate -gt $now.AddMinutes(5)) {
-        return $candidate.AddDays(-1)
-      }
-      return $candidate
-    }
-    return $parsed
-  }
-  return $now
-}
-
 function Get-XqRoot($symbol) {
   $value = ([string]$symbol).Trim().ToUpperInvariant()
   if ($value -match "^(INDEX:TWII|TWSE:TAIEX|FITX00|TSE\.TW)") { return $SpotRoot }
   if ($value -match "^(FITX\*1|FITX1|TXDAY|TX_DAY)$") { return $DayFuturesRoot }
   if ($value -match "^(FITXN\*1|FITXN1|TXFULL|TX_FULL)$") { return $AfterHoursFuturesRoot }
+  if ($value -ne "" -and $value -ne "TX") { throw "Unsupported symbol: $symbol (use TX, FITX*1, FITXN*1 or INDEX:TWII)" }
   $now = Get-Date
   $minute = $now.Hour * 60 + $now.Minute
   $dayStart = 8 * 60 + 45
@@ -248,26 +243,19 @@ function Request-DdeField($root, $field, [bool]$required = $false) {
 
 function Read-DdeQuote($root) {
   return @{
-    ID = Request-DdeField $root "ID"
-    Name = Request-DdeField $root "Name"
-    Time = Request-DdeField $root "Time"
     Bid = Request-DdeField $root "Bid"
     Ask = Request-DdeField $root "Ask"
     Price = Request-DdeField $root "Price" ($root -ne $SpotRoot)
     PriceChange = Request-DdeField $root "PriceChange"
     PriceChangeRatio = Request-DdeField $root "PriceChangeRatio"
-    Amplitude = Request-DdeField $root "Amplitude"
     PreClose = Request-DdeField $root "PreClose"
     Open = Request-DdeField $root "Open"
     High = Request-DdeField $root "High"
     Low = Request-DdeField $root "Low"
     Volume = Request-DdeField $root "Volume"
     TotalVolume = Request-DdeField $root "TotalVolume"
-    AvgPrice = Request-DdeField $root "AvgPrice"
-    InOutRatioNumber = Request-DdeField $root "InOutRatioNumber"
-      PreTotalVolume = Request-DdeField $root "PreTotalVolume"
-      AmountYi = Request-DdeField $root "AmountYi"
-    }
+    AmountYi = Request-DdeField $root "AmountYi"
+  }
 }
 
 function Alternate-FuturesRoot($root) {
@@ -282,7 +270,7 @@ function Get-XqQuote([string]$symbol = "TX") {
     $quote = Read-DdeQuote $root
   } catch {
     $alternateRoot = Alternate-FuturesRoot $root
-    if ($alternateRoot -eq $null) { throw }
+    if ($null -eq $alternateRoot -or $alternateRoot -eq $root) { throw }
     Write-Host "DDE primary root failed: $root. Trying alternate root: $alternateRoot. Error: $($_.Exception.Message)"
     $root = $alternateRoot
     $quote = Read-DdeQuote $root
@@ -308,24 +296,19 @@ function Get-XqQuote([string]$symbol = "TX") {
   if ($price -eq $null) {
     throw "DDE item has no price: $root-Price (raw Price='$($quote.Price)', Ask='$($quote.Ask)', Bid='$($quote.Bid)')"
   }
-  if ($open -eq $null) { $open = if ($preClose -ne $null) { $preClose } else { $price } }
   if ($high -eq $null) { $high = $price }
   if ($low -eq $null) { $low = $price }
 
   $tickVolume = Convert-ToNumber $quote.Volume
   $totalVolume = Convert-ToNumber $quote.TotalVolume
   $amountYi = Convert-ToNumber $quote.AmountYi
-  $quoteTime = Get-QuoteTime $quote.Time
   $sampleTime = Get-Date
   $normalizedSymbol = if ($root -eq $SpotRoot) { "INDEX:TWII" } elseif ($root -eq $DayFuturesRoot) { "FITX*1" } else { "FITXN*1" }
   $session = if ($root -eq $DayFuturesRoot) { "day" } elseif ($root -eq $AfterHoursFuturesRoot) { "after-hours" } else { "spot" }
-  return [pscustomobject]@{
+  $result = [pscustomobject]@{
     symbol = $normalizedSymbol
     session = $session
-    id = $quote.ID
-    name = $quote.Name
     time = ([DateTimeOffset]$sampleTime).ToUnixTimeSeconds()
-    tradeTime = ([DateTimeOffset]$quoteTime).ToUnixTimeSeconds()
     bid = Convert-ToNumber $quote.Bid
     ask = Convert-ToNumber $quote.Ask
     open = $open
@@ -337,17 +320,16 @@ function Get-XqQuote([string]$symbol = "TX") {
     prevClose = $preClose
     change = Convert-ToNumber $quote.PriceChange
     changePct = Convert-ToNumber $quote.PriceChangeRatio
-    amplitude = Convert-ToNumber $quote.Amplitude
     volume = if ($totalVolume -ne $null) { $totalVolume } else { $tickVolume }
     tickVolume = $tickVolume
     totalVolume = $totalVolume
     amountYi = $amountYi
-    avgPrice = Convert-ToNumber $quote.AvgPrice
-    inOutRatio = Convert-ToNumber $quote.InOutRatioNumber
-    prevTotalVolume = Convert-ToNumber $quote.PreTotalVolume
     root = $root
     raw = $quote
   }
+  # Unmapped fields are left out, not null: the frontend reads Number(null) as 0.
+  @($result.PSObject.Properties | Where-Object { $null -eq $_.Value }) | ForEach-Object { $result.PSObject.Properties.Remove($_.Name) }
+  return $result
 }
 
 function Get-BucketKey($epoch, $timeframe) {
@@ -363,21 +345,24 @@ function Normalize-Timeframe($timeframe) {
 }
 
 function Update-Candle($quote, $timeframe) {
-  $timeframe = Normalize-Timeframe $timeframe
   $bucket = Get-BucketKey $quote.time $timeframe
-  $key = "$($quote.symbol):$($timeframe):$bucket"
-  $volumeKey = "$($quote.symbol):$timeframe"
+  $bucketKey = [string]$bucket  # string key: an integer would hit OrderedDictionary's index overload
+  $seriesKey = "$($quote.symbol):$timeframe"
+  if (-not $script:series.ContainsKey($seriesKey)) {
+    $script:series[$seriesKey] = [System.Collections.Specialized.OrderedDictionary]::new()
+  }
+  $candles = $script:series[$seriesKey]
   $tradePrice = [double]$quote.close
   $volumeDelta = 0
-  if ($quote.volume -ne $null) {
+  if ($null -ne $quote.volume) {
     $currentVolume = [double]$quote.volume
-    $previousVolume = if ($script:lastVolumeBySymbol.ContainsKey($volumeKey)) { [double]$script:lastVolumeBySymbol[$volumeKey] } else { $currentVolume }
+    $previousVolume = if ($script:lastVolumeBySeries.ContainsKey($seriesKey)) { [double]$script:lastVolumeBySeries[$seriesKey] } else { $currentVolume }
     $volumeDelta = if ($currentVolume -ge $previousVolume) { $currentVolume - $previousVolume } else { $currentVolume }
-    $script:lastVolumeBySymbol[$volumeKey] = $currentVolume
+    $script:lastVolumeBySeries[$seriesKey] = $currentVolume
   }
 
-  if (-not $script:candles.ContainsKey($key)) {
-    $script:candles[$key] = [ordered]@{
+  if (-not $candles.Contains($bucketKey)) {
+    $candles[$bucketKey] = [ordered]@{
       time = $bucket
       open = $tradePrice
       high = $tradePrice
@@ -386,14 +371,16 @@ function Update-Candle($quote, $timeframe) {
       volume = 0
       prevClose = $quote.prevClose
     }
+    # Buckets are added in time order, so index 0 is the oldest.
+    if ($candles.Count -gt $MaxCandlesPerSeries) { $candles.RemoveAt(0) }
   }
 
-  $candle = $script:candles[$key]
+  $candle = $candles[$bucketKey]
   $candle.high = [Math]::Max([double]$candle.high, $tradePrice)
   $candle.low = [Math]::Min([double]$candle.low, $tradePrice)
   $candle.close = $tradePrice
-  if ($quote.volume -ne $null) { $candle.volume = [double]$candle.volume + $volumeDelta }
-  if ($quote.prevClose -ne $null) { $candle.prevClose = $quote.prevClose }
+  if ($null -ne $quote.volume) { $candle.volume = [double]$candle.volume + $volumeDelta }
+  if ($null -ne $quote.prevClose) { $candle.prevClose = $quote.prevClose }
 }
 
 function Update-AllCandles($quote) {
@@ -408,9 +395,6 @@ function Send-Json($response, $status, $payload) {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
     $response.StatusCode = $status
     $response.ContentType = "application/json; charset=utf-8"
-    $response.Headers["Access-Control-Allow-Origin"] = "*"
-    $response.Headers["Access-Control-Allow-Methods"] = "GET,OPTIONS"
-    $response.Headers["Access-Control-Allow-Headers"] = "Content-Type,Accept"
     if ($bytes.Length -gt 0) {
       $response.OutputStream.Write($bytes, 0, $bytes.Length)
     }
@@ -451,6 +435,19 @@ try {
     $request = $context.Request
     $response = $context.Response
 
+    $origin = $request.Headers["Origin"]
+    if ($AllowedOrigins -contains $origin) {
+      $response.Headers["Access-Control-Allow-Origin"] = $origin
+      $response.Headers["Vary"] = "Origin"
+      $response.Headers["Access-Control-Allow-Methods"] = "GET,OPTIONS"
+      $response.Headers["Access-Control-Allow-Headers"] = "Content-Type,Accept"
+    }
+    # http.sys accepts any Host on this prefix, so check it here to block DNS rebinding.
+    if (($origin -and $AllowedOrigins -notcontains $origin) -or @("127.0.0.1:$Port", "localhost:$Port") -notcontains $request.Headers["Host"]) {
+      Send-Json $response 403 @{ error = "Forbidden origin or host" }
+      continue
+    }
+
     if ($request.HttpMethod -eq "OPTIONS") {
       Send-Json $response 204 @{}
       continue
@@ -472,10 +469,8 @@ try {
         $quote = Get-XqQuote $symbol
         $timeframe = Normalize-Timeframe $timeframe
         Update-AllCandles $quote
-        $rows = @($script:candles.GetEnumerator() |
-          Where-Object { $_.Key -like "$($quote.symbol):$($timeframe):*" } |
-          ForEach-Object { $_.Value } |
-          Sort-Object time)
+        $candles = $script:series["$($quote.symbol):$timeframe"]
+        $rows = @(if ($null -ne $candles) { $candles.Values })
         Send-Json $response 200 @{ data = $rows; quote = $quote }
         continue
       }

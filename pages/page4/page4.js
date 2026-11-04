@@ -1,4 +1,4 @@
-// Page4 掛載邏輯：呈現策略/訊號區塊並處理各面板收合與更新。
+// Page4 選擇權策略：策略組合、到期損益圖（元）、選擇權鏈、Greeks。選擇權鏈目前是示範資料，真資料等期交所盤後資料接上。
 import { store } from '../../data/store.js';
 import { StrategyBuilder } from '../../components/StrategyBuilder.js';
 import { PLChart } from '../../components/PLChart.js';
@@ -6,14 +6,11 @@ import { GreeksTable } from '../../components/GreeksTable.js';
 import { ChainViewer } from '../../components/ChainViewer.js';
 import { bindHorizontalSplitter } from '../../services/splitter.js';
 
-// cleanup：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
-let cleanup = () => {};
-
-// mount：函式用途註解，說明此處封裝一段可重用的流程。
+// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
 export function mount(container) {
-  // 段落說明：建立此區塊的 DOM 結構。
+  // 選擇權鏈目前是內建示範資料，標題列明白標示。
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 4｜選擇權策略圖表</h2></div>
+    <div class="page-topbar"><h2>PAGE 4｜選擇權策略圖表 <span class="badge badge--mid">示範資料</span></h2></div>
     <div class="p4-grid">
       <div id="p4-builder"></div>
       <div class="p4-main" id="p4-main">
@@ -26,7 +23,6 @@ export function mount(container) {
   `;
 
   const mainEl = container.querySelector('#p4-main');
-  // readVar：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const readVar = (name, fallback) => {
     const value = parseFloat(getComputedStyle(mainEl).getPropertyValue(name));
     return Number.isFinite(value) ? value : fallback;
@@ -42,11 +38,10 @@ export function mount(container) {
   const builder = new StrategyBuilder(container.querySelector('#p4-builder'), { defaultCollapsed: true });
   builder.root.classList.add('p4-resize');
   const chart = new PLChart(container.querySelector('#p4-chart'));
+  // 點選擇權鏈的價格：點賣價＝買進一口、點買價＝賣出一口。
   const chain = new ChainViewer(container.querySelector('#p4-chain'), {
-    onStrike: (strike) => {
-      const legs = store.get('strategyLegs');
-      legs.push({ type: 'call', action: 'buy', strike, qty: 1, premium: 100 });
-      store.set('strategyLegs', legs);
+    onPick: ({ type, action, strike, premium }) => {
+      store.set('strategyLegs', [...store.get('strategyLegs'), { type, action, strike, qty: 1, premium }]);
     }
   });
   chain.root.classList.add('p4-resize');
@@ -54,38 +49,24 @@ export function mount(container) {
   const greeks = new GreeksTable(container.querySelector('#p4-greeks'));
   greeks.root.classList.add('p4-resize');
 
-  // render：箭頭函式用途註解，用於此區塊內的回呼或輔助流程。
   const render = () => {
     const chainData = store.get('optionsChain');
     const legs = store.get('strategyLegs');
     chart.update(legs, chainData.spotPrice);
     chain.update(chainData);
     greeks.update(legs, chainData);
-    builder.updateSummary();
+    builder.update();
   };
 
   render();
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub1 = store.subscribe('strategyLegs', render);
-  // 段落說明：訂閱 store 資料變化，資料更新時同步刷新畫面。
-  const unsub2 = store.subscribe('optionsChain', render);
+  const unsubLegs = store.subscribe('strategyLegs', render);
 
-  cleanup = () => {
-    unsub1();
-    unsub2();
+  return () => {
+    unsubLegs();
     stopMainSplit();
     builder.destroy();
     chart.destroy();
     chain.destroy();
     greeks.destroy();
   };
-
-  // 段落說明：回傳目前頁面的清理函式。
-  return cleanup;
-}
-
-// unmount：函式用途註解，說明此處封裝一段可重用的流程。
-export function unmount() {
-  cleanup();
-  cleanup = () => {};
 }
