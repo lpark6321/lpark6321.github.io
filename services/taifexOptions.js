@@ -1,5 +1,6 @@
-// 期交所 OpenAPI DailyMarketReportOpt（選擇權每日行情）轉成 Page4 用的台指選擇權鏈；純計算，不抓資料、不碰 DOM。
-// 鏈的格式同 store.optionsChain：{ underlying, spotPrice, expiry, calls: [{ strike, bid, ask, settle }], puts: [...] }。
+// 台指選擇權鏈：期交所盤後檔（DailyMarketReportOpt）的解析，以及盤後檔／期交所 MIS（misQuotes.parseMisOptions）共用的到期序列與組鏈。
+// 純計算，不抓資料、不碰 DOM。鏈的格式同 store.optionsChain：{ underlying, spotPrice, expiry, calls: [{ strike, last, bid, ask, settle }], puts }。
+// 價格一律看成交價（last）；沒有成交時 optionStrategy.chainPrice 才退回買賣價或結算／參考價。
 import { TW_MARKET_HOLIDAYS } from '../data/twMarketHolidays.js';
 
 // 期交所缺值是 '-' 或空字串；不是數字一律當 null。
@@ -18,7 +19,7 @@ export function parseTxoReport(json, { session = '一般' } = {}) {
       bid: num(row.BestBid),
       ask: num(row.BestAsk),
       settle: num(row.SettlementPrice),
-      close: num(row.Close),
+      last: num(row.Close) ?? num(row.Last),
       volume: num(row.Volume),
       openInterest: num(row.OpenInterest)
     }))
@@ -54,11 +55,24 @@ export function contractExpiry(code) {
 
 const KIND = { W: 'week-wed', F: 'week-fri' };
 
-// 報表裡出現的所有到期序列，依到期日排序。
+// 序列的到期日：列上有就用（MIS 週選），否則由代號推算。
+const seriesExpiry = (rows, contractMonth) => rows.find((row) => row.contractMonth === contractMonth && row.expiry)?.expiry || contractExpiry(contractMonth);
+
+// 週三／週五依到期日的星期判斷（MIS 週選代號不是 W/F 格式）。
+function expiryKind(contractMonth, expiry) {
+  if (KIND[contractMonth[6]]) return KIND[contractMonth[6]];
+  if (/^\d{6}$/.test(contractMonth)) return 'month';
+  return new Date(`${expiry}T00:00:00Z`).getUTCDay() === 5 ? 'week-fri' : 'week-wed';
+}
+
+// 資料裡出現的所有到期序列，依到期日排序。
 export function listExpiries(rows) {
   const codes = [...new Set(rows.map((row) => row.contractMonth))];
   return codes
-    .map((contractMonth) => ({ contractMonth, expiry: contractExpiry(contractMonth), kind: KIND[contractMonth[6]] || 'month' }))
+    .map((contractMonth) => {
+      const expiry = seriesExpiry(rows, contractMonth);
+      return { contractMonth, expiry, kind: expiry ? expiryKind(contractMonth, expiry) : 'month' };
+    })
     .filter((item) => item.expiry)
     .sort((a, b) => a.expiry.localeCompare(b.expiry) || a.contractMonth.localeCompare(b.contractMonth));
 }
@@ -80,9 +94,6 @@ export function buildChain(rows, contractMonth, spotPrice, { range = 15 } = {}) 
   const side = (type) => series
     .filter((row) => row.type === type && keep.has(row.strike))
     .sort((a, b) => a.strike - b.strike)
-    .map(({ strike, bid, ask, settle }) => (bid === null && ask === null
-      // 盤後常沒有最佳買賣價：用結算價當買價和賣價，鏈上才點得到；只缺一邊時照實留 null。
-      ? { strike, bid: settle, ask: settle, settle }
-      : { strike, bid, ask, settle }));
-  return { underlying: 'TX', spotPrice, expiry: contractExpiry(contractMonth), calls: side('call'), puts: side('put') };
+    .map(({ strike, last, bid, ask, settle }) => ({ strike, last: last ?? null, bid, ask, settle }));
+  return { underlying: 'TX', spotPrice, expiry: seriesExpiry(rows, contractMonth), calls: side('call'), puts: side('put') };
 }

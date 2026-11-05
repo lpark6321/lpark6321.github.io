@@ -1,4 +1,4 @@
-// Local Yahoo + FinMind + TWSE OpenAPI proxy for development.
+// Local Yahoo + FinMind + TWSE OpenAPI + TWSE/TAIFEX MIS proxy for development.
 // Run with: node bridges/yahooProxyServer.js
 // Frontend calls this server instead of query1.finance.yahoo.com to avoid browser CORS blocks.
 const http = require('node:http');
@@ -284,13 +284,81 @@ async function handleTwse(res, dataset) {
   sendJson(res, 200, payload);
 }
 
+// ---- 證交所／期交所 MIS（網站自己用的即時資料介面，非正式 API）：「公開資料」來源的加權成交金額、台指期、選擇權 ----
+
+// 加權指數每分鐘收盤與成交金額、累積成交金額（staticObj.tz，元）。不需要 cookie。
+async function handleTwseMisIndex(reqUrl, res) {
+  sendJson(res, 200, await fetchJson('https://mis.twse.com.tw/stock/data/mis_ohlc_TSE.txt'));
+}
+
+// 期交所 MIS 只收 POST JSON；同一組條件在快取時間內共用一次上游請求。
+const taifexCache = new Map();
+const TAIFEX_FIELDS = ['SymbolID', 'DispCName', 'CLastPrice', 'CRefPrice', 'COpenPrice', 'CHighPrice', 'CLowPrice', 'CTotalVolume',
+  'CBestBidPrice', 'CBestAskPrice', 'CDiff', 'CDiffRate', 'CDate', 'CTime'];
+
+async function fetchTaifexMis(body, ttl) {
+  const key = JSON.stringify(body);
+  const item = taifexCache.get(key);
+  if (item && Date.now() - item.time <= ttl) return item.payload;
+  const response = await fetch('https://mis.taifex.com.tw/futures/api/getQuoteList', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': USER_AGENT },
+    body: JSON.stringify({ KindID: '1', ExpireMonth: '', RowSize: '全部', PageNo: '', SortColumn: '', AscDesc: 'A', ...body }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error(`TAIFEX MIS HTTP ${response.status}`);
+  const json = await response.json();
+  if (String(json.RtCode) !== '0') throw new Error(`TAIFEX MIS ${json.RtMsg || json.RtCode}`);
+  // 只留前端用得到的欄位。
+  const list = json.RtData?.QuoteList || [];
+  // 選擇權約 3000 列，改成精簡陣列 [代號, 名稱裡的到期日, 成交價, 參考價, 買價, 賣價, 成交量]，大小約剩 1/5。
+  const payload = body.SymbolType === 'O'
+    ? list.map((row) => [row.SymbolID, String(row.DispCName || '').match(/\((\d{4}\/\d{2}\/\d{2})\)/)?.[1] || '', row.CLastPrice, row.CRefPrice, row.CBestBidPrice, row.CBestAskPrice, row.CTotalVolume])
+    : list.map((row) => Object.fromEntries(TAIFEX_FIELDS.map((field) => [field, row[field] ?? ''])));
+  taifexCache.set(key, { time: Date.now(), payload });
+  return payload;
+}
+
+// ?kind=futures|options&session=day|night
+async function handleTaifexMis(reqUrl, res) {
+  const options = reqUrl.searchParams.get('kind') === 'options';
+  const night = reqUrl.searchParams.get('session') === 'night';
+  const body = { MarketType: night ? '1' : '0', SymbolType: options ? 'O' : 'F', CID: options ? 'TXO' : 'TXF' };
+  sendJson(res, 200, await fetchTaifexMis(body, options ? 10000 : CACHE_TTL_MS));
+}
+
+// 期交所 OpenAPI 選擇權每日行情（收盤後的選擇權鏈）：原檔約 4 MB，只留 TXO 一般交易時段與用得到的欄位，快取 30 分鐘。
+const TAIFEX_OPT_DAILY_FIELDS = ['Contract', 'ContractMonth(Week)', 'StrikePrice', 'CallPut', 'TradingSession', 'BestBid', 'BestAsk',
+  'SettlementPrice', 'Close', 'Last', 'Volume', 'OpenInterest', 'Date'];
+let taifexOptDaily = null;
+
+async function handleTaifexOptDaily(reqUrl, res) {
+  if (!taifexOptDaily || Date.now() - taifexOptDaily.time > 30 * 60 * 1000) {
+    const response = await fetch('https://openapi.taifex.com.tw/v1/DailyMarketReportOpt', {
+      headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) throw new Error(`TAIFEX DailyMarketReportOpt HTTP ${response.status}`);
+    const rows = await response.json();
+    if (!Array.isArray(rows)) throw new Error('TAIFEX DailyMarketReportOpt returned no rows');
+    const payload = rows
+      .filter((row) => row.Contract === 'TXO' && row.TradingSession === '一般')
+      .map((row) => Object.fromEntries(TAIFEX_OPT_DAILY_FIELDS.filter((field) => field in row).map((field) => [field, row[field]])));
+    taifexOptDaily = { time: Date.now(), payload };
+  }
+  sendJson(res, 200, taifexOptDaily.payload);
+}
+
 const routes = {
   '/api/yahoo-quote': handleQuote,
   '/api/yahoo-chart': handleChart,
   '/api/finmind-futures-snapshot': (reqUrl, res, req) => handleFinMind(req, res, 'snapshot', finMindSnapshotUrl(reqUrl)),
   '/api/finmind-futures-daily': (reqUrl, res, req) => handleFinMind(req, res, 'daily', finMindDailyUrl(reqUrl)),
   '/api/twse-valuation': (reqUrl, res) => handleTwse(res, 'valuation'),
-  '/api/twse-daily': (reqUrl, res) => handleTwse(res, 'daily')
+  '/api/twse-daily': (reqUrl, res) => handleTwse(res, 'daily'),
+  '/api/twse-mis-index': handleTwseMisIndex,
+  '/api/taifex-mis': handleTaifexMis,
+  '/api/taifex-opt-daily': handleTaifexOptDaily
 };
 
 const server = http.createServer(async (req, res) => {
@@ -332,7 +400,10 @@ const server = http.createServer(async (req, res) => {
         '/api/finmind-futures-snapshot?data_id=TXF',
         '/api/finmind-futures-daily?data_id=TX',
         '/api/twse-valuation',
-        '/api/twse-daily'
+        '/api/twse-daily',
+        '/api/twse-mis-index',
+        '/api/taifex-mis?kind=futures|options&session=day|night',
+        '/api/taifex-opt-daily'
       ]
     });
   } catch (error) {

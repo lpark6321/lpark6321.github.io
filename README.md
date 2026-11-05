@@ -2,7 +2,7 @@
 
 台股／台指期看盤儀表板。純 HTML + CSS + 原生 ES Modules，沒有建置流程、沒有 npm 相依套件，直接以 GitHub Pages 發佈（`lpark6321.github.io`）。
 
-即時行情目前以 Yahoo 為主，經本機的 Yahoo 代理取得；券商 DDE 與 FinMind 介面保留。抓不到資料時畫面顯示「--」，不會用假資料頂替；想看假行情請在「資料來源」選「模擬資料」。
+即時行情目前以「公開資料」為主：個股與全球指數走 Yahoo，加權成交金額、台指期、台指選擇權走證交所／期交所的公開網站資料（MIS），都經本機代理取得；券商 DDE 與 FinMind 介面保留。抓不到資料時畫面顯示「--」，不會用假資料頂替；想看假行情請在「資料來源」選「模擬資料」。
 
 ## 頁面
 
@@ -15,11 +15,11 @@
 
 | 分頁 | 內容 |
 |------|------|
-| Page 1 Futures Overview | 台指期總覽（需要期貨來源，Yahoo 模式整塊灰掉）、多空關卡（樞紐點／振幅倍數／固定點數可切換）、30 日振幅與 20 日均線月成本（日 K）、K 線主圖（`services/marketChart.js`）、TradingView 小工具 |
+| Page 1 Futures Overview | 台指期總覽（公開資料或 DDE 來源；台指(全) 夜盤時段顯示夜盤）、多空關卡（樞紐點／振幅倍數／固定點數可切換）、30 日振幅與 20 日均線月成本（日 K）、K 線主圖（`services/marketChart.js`）、TradingView 小工具 |
 | Page 2 Market Temperature | 市場溫度：權值股、電子／金融／傳產分類統計、儀表與圓餅圖。拿不到資料的區塊各自灰掉 |
 | Page 3 Watchlist Alerts | 自選股（含即時報價，存在瀏覽器，可匯出／匯入 JSON；群組可新增、改名、刪除，股票可拖曳換群組）與型態提醒：自選股日 K + 即時價計算 6 種技術型態，可開桌面通知；當天的提醒存在瀏覽器，重新整理不會重複或消失，隔天清掉 |
-| Page 4 Options Strategy | 選擇權策略組合（腳位清單、匯出匯入、自動存在瀏覽器）、到期損益圖（元）、Black-Scholes Greeks、選擇權鏈（**示範資料**；期交所 TXO 盤後行情的解析與到期日判斷已寫在 `services/taifexOptions.js`，還沒接上抓取） |
-| Page 5 Stock Screener | 上市股票條件選股：證交所盤後的本益比、殖利率、股價淨值比、成交量、漲跌幅（`services/filterEngine.js`），結果可匯出 CSV |
+| Page 4 Options Strategy | 選擇權策略組合（腳位清單、匯出匯入、自動存在瀏覽器）、到期損益圖（元）、Black-Scholes Greeks、選擇權鏈（公開資料來源：日盤用期交所 MIS 的**成交價**，盤後改讀期交所每日行情；可選到期序列（週三、週五、月選）；其他來源是示範資料）。點價格＝買進一口，Shift＋點＝賣出 |
+| Page 5 Stock Screener | 上市股票條件選股：證交所盤後的本益比、殖利率、股價淨值比、成交量、漲跌幅；公開資料來源另有技術指標條件（KD、MACD 黃金交叉、量增、站上 SMA／EMA、布林突破），只對成交量超過 1000 張的股票抓日 K 計算（`services/filterEngine.js`、`screenerHistory.js`）。結果可匯出 CSV |
 | Page 6 Market Map | 台股市場地圖：方塊圖與旭日圖，顏色可選今日漲跌或量比，可搜尋代碼；沒有報價的方塊畫斜線；控制列標示各權重名單的資料日期 |
 | Page 7 Global Indices | 亞股、美股、外匯、加密貨幣與世界時鐘（卡片大小固定，只更新數字） |
 
@@ -73,16 +73,23 @@ Yahoo 代理（`bridges/yahooProxyServer.js`）提供：
 - `/api/finmind-futures-snapshot?data_id=TXF`
 - `/api/finmind-futures-daily?data_id=TX`
 - `/api/twse-valuation`、`/api/twse-daily`：證交所 OpenAPI 的本益比／殖利率／股價淨值比與當日行情（Page5 選股），快取 10 分鐘
+- `/api/twse-mis-index`：證交所 MIS 的加權指數每分鐘收盤與成交金額、累積成交金額
+- `/api/taifex-mis?kind=futures|options&session=day|night`：期交所 MIS 的台指期／台指選擇權即時報價（選擇權壓成精簡陣列，快取 10 秒）
+- `/api/taifex-opt-daily`：期交所 OpenAPI 選擇權每日行情（只留 TXO 一般時段），快取 30 分鐘
+
+MIS 是證交所、期交所網站自己用的資料介面，不是正式 API，格式可能改變；抓不到時標頭會提示代理或來源有問題。
 
 代理只接受來自 `http://127.0.0.1:8000`、`http://localhost:8000`、`https://lpark6321.github.io` 的瀏覽器請求，其他網站一律回 403。送往上游的每個請求 8 秒逾時。
 
 可用環境變數 `YAHOO_PROXY_PORT`（預設 8787）與 `YAHOO_PROXY_CACHE_MS`（預設 4000）調整。快取時間比預設 5 秒的輪詢短，所以每次輪詢都會拿到新資料，快取只用來合併同時送出的相同請求。
 
-## 右上角
+## 標頭
 
-- **台股狀態**：盤前／盤中／收盤／休市（附原因，例如「週六」或假日名稱），以及距開盤或收盤的倒數。
-- **連線提示**：Yahoo 代理（8787）、券商橋接或證交所連不上時直接寫出是哪一個；在 GitHub Pages 線上版連不上代理時，提示要在本機執行 `GIO.cmd`。設定檔的休市表沒有今年時，提示要重算設定檔。
-- **設定備份／設定還原**：把自選股與群組、策略腳位、選股條件、型態開關、多空關卡、資料來源、更新頻率一次存成一個 JSON 檔；還原後重新載入頁面生效。所有瀏覽器設定集中在 `data/storage.js`（鍵名 `gio.<名稱>`）。FinMind token 不在備份內。
+標頭分兩列：上列是標題與分頁（`1 期貨總覽` … `7 全球指數`），下列是資料來源、更新頻率、手動更新、狀態與提示；視窗窄或放大時自動換行。字級依視窗寬度縮放（`style/variables.css` 的 `--fs-*`）。
+
+- **台股與期貨狀態**：台股盤前／盤中／收盤／休市（附原因，例如「週六」或假日名稱）；期貨日盤／休息／夜盤／休市；各自到開盤或收盤的倒數。
+- **連線提示**：Yahoo 代理（8787）、券商橋接或證交所連不上時直接寫出是哪一個；在 GitHub Pages 線上版連不上代理時，提示要在本機執行 `GIO.cmd`。盤中超過更新頻率 3 倍沒有新資料時提示「資料延遲」。設定檔的休市表沒有今年、或加權權重資料超過一個月時，提示要重算設定檔。
+- **「⋯」選單**：Data Lab 連結與**設定備份／設定還原**：把自選股與群組、策略腳位、選股條件、型態開關、多空關卡、資料來源、更新頻率一次存成一個 JSON 檔；還原後重新載入頁面生效。所有瀏覽器設定集中在 `data/storage.js`（鍵名 `gio.<名稱>`）。FinMind token 不在備份內。
 - **快捷鍵**：`1`～`7` 切換分頁、`R` 手動更新（在輸入框裡打字時不作用）。
 
 ## 資料來源切換
@@ -95,7 +102,7 @@ Yahoo 代理（`bridges/yahooProxyServer.js`）提供：
 
 | 選項 | 來源 |
 |------|------|
-| YAHOO（預設） | 經 8787 代理：加權、權值股、市場地圖、全球指數、加權與權值股 1 分 K |
+| 公開資料（預設） | 經 8787 代理：Yahoo 的加權報價、權值股、市場地圖、全球指數、個股 1 分 K 與日 K；證交所 MIS 的加權成交金額（億）與每分鐘走勢；期交所 MIS 的台指期近月（日盤／夜盤）與台指選擇權成交價；收盤後選擇權改讀期交所每日行情 |
 | 模擬資料 | `services/priceSimulator.js` 產生的假加權與十大權值股，每個節拍跳一次，不發任何即時行情請求 |
 | FinMind（預留） | 只有 C 區圖表會用（FinMind 期貨 K 線），需要 token |
 | 期交所CSV（預留） | 只有 C 區圖表會用（載入本機逐筆檔） |
@@ -111,7 +118,9 @@ services/feedClock.js（全站唯一的計時器，依「更新頻率」打節�
         └ 目前開著的那一頁訂閱 store，只重畫用到的區塊
 ```
 
-- 抓資料的程式都在 `services/`：`yahooTwQuotes.js`、`yahooGlobalQuotes.js`（Yahoo 報價）、`marketSources.js`（K 線與券商報價）、`priceSimulator.js`（模擬）。頁面不自己抓資料。
+- 抓資料的程式都在 `services/`：`yahooTwQuotes.js`、`yahooGlobalQuotes.js`（Yahoo 報價）、`misQuotes.js`（證交所／期交所 MIS）、`marketSources.js`（K 線與券商報價）、`priceSimulator.js`（模擬）。頁面不自己抓資料（Page5 的技術指標日 K 是按「執行篩選」才經 `screenerHistory.js` 抓）。
+- 大單提醒（N1）的判斷邏輯在 `services/bigOrder.js`（外盤／內盤大單、台指期一分鐘大量），等有逐筆資料再接上畫面。
+- 每個節拍要讀很多次的大資料（市場地圖、證交所盤後表）用 `store.peek()` 唯讀取用，不複製；其他地方用 `store.get()` 拿複本。
 - 切換分頁時前一頁會卸載、取消訂閱，所以看不到的頁面不會重畫；資料仍照常更新，切回來時直接畫最新值。Page 1 的 6 區與 B 區也只畫目前選到的分頁。
 - C 區圖表要的是使用者選的商品與週期，K 線由圖表自己經 `marketSources.js` 抓，但重抓時機跟著同一個節拍（`feedClock.js` 的 `subscribeFeedTick`），不另開計時器。Data Lab 也一樣只訂閱節拍，不會啟動主儀表板的 `marketFeed`。
 - 「手動更新」立刻跑一輪，不等下一個節拍。
@@ -134,7 +143,7 @@ providers/           Data Lab 使用的資料提供者（Yahoo、FinMind、期�
 data/                全域 store（訂閱式狀態）、瀏覽器設定（storage.js）、台股清單；成分股權重與休市日讀 data/config/marketConfig.json
 data/config/         市場設定檔與它的原始檔（source/），說明見 data/config/README.md
 tools/               設定檔重算工具（rebuild-config.mjs）
-tests/               測試：node tests/run.mjs（靜態檢查 + 單元測試，不需要瀏覽器）
+tests/               測試：node tests/run.mjs（靜態檢查 + 單元測試，不需要瀏覽器）；node tests/browser.mjs（無頭 Chrome 在三種畫面大小檢查 7 頁的版面，截圖到 tests/.browser-shots/）
 style/               共用樣式（variables / layout / components）
 style.css, main.js   Data Lab（index.html）專用
 ```
@@ -153,7 +162,7 @@ style.css, main.js   Data Lab（index.html）專用
 ## 當前架構
 
 ```
-瀏覽器：index_hide.html + app.js（外殼：分頁切換、右上角選單、台股狀態、連線提示、快捷鍵）
+瀏覽器：index_hide.html + app.js（外殼：分頁切換、標頭選單、台股／期貨狀態、提示、快捷鍵）
 │
 ├─ dashboardDataSource.js   「資料來源」（含各來源能做什麼）、「更新頻率」、成交量預估
 ├─ marketCalendar.js        台股交易時段、休市日、台股狀態與倒數
@@ -163,6 +172,7 @@ style.css, main.js   Data Lab（index.html）專用
 │   ├─ marketFeed.js        每一拍只向選定的來源要資料，結果寫進 store；切換來源時先清空
 │   │   ├─ yahooTwQuotes.js      Yahoo：加權、權值股、市場地圖
 │   │   ├─ yahooGlobalQuotes.js  Yahoo：全球指數
+│   │   ├─ misQuotes.js          證交所／期交所 MIS：加權成交金額、台指期、選擇權
 │   │   ├─ marketSources.js      券商橋接：期貨、加權報價與 K 線
 │   │   ├─ priceSimulator.js     模擬資料
 │   │   ├─ twseData.js           證交所盤後資料（不受來源限制）
@@ -177,6 +187,6 @@ style.css, main.js   Data Lab（index.html）專用
                             切走就卸載、取消訂閱，看不到的頁面不會重畫
 
 本機服務 bridges/（瀏覽器無法直接連 Yahoo 和券商，要經過它們轉送）
-├─ yahooProxyServer.js  :8787   Yahoo、FinMind、證交所 OpenAPI 代理
+├─ yahooProxyServer.js  :8787   Yahoo、FinMind、證交所 OpenAPI、證交所／期交所 MIS 代理
 └─ xqDdeBridge.ps1      :8788 / :8790   凱基、台新 DDE
 ```

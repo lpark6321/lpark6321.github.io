@@ -6,14 +6,16 @@ const CHANGE_EVENT = 'dashboard:data-source-change';
 const POLL_CHANGE_EVENT = 'dashboard:poll-interval-change';
 const DEFAULT_POLL_SECONDS = 5;
 
-// 目前以 YAHOO 為主要資料來源；DDE 與 API 介面保留，標示為預留。新增來源只要在這裡加一列：
+// 目前以「公開資料」為主要資料來源；DDE 與 API 介面保留，標示為預留。新增來源只要在這裡加一列：
 //   feed     marketFeed 會定時抓報價寫進 store（其他來源只有 C 區圖表會用）
 //   stocks   有個股報價與市場地圖（Page2 市場統計、Page3 自選股報價、Page6 市場地圖）
 //   bridge   本機橋接的 API 根網址，提供 /xq-quote（報價）與 /broker-candles（K 線）
 //   futures  K 線是台指期本身的資料（可算月成本）
+//   mis      加權成交金額、台指期、選擇權由證交所／期交所 MIS 補（services/misQuotes.js）
 //   snapshot 每次只回最新一根 K，要接在既有 K 線後面
 export const DASHBOARD_DATA_SOURCES = [
-  { value: 'yahoo', label: 'YAHOO', feed: true, stocks: true },
+  // value 沿用 'yahoo'，使用者存過的設定不必轉換。
+  { value: 'yahoo', label: '公開資料', feed: true, stocks: true, mis: true },
   { value: 'mock', label: '模擬資料', feed: true },
   { value: 'finmind', label: 'FinMind（預留）', futures: true, snapshot: true },
   { value: 'taifex_csv', label: '期交所CSV（預留）', futures: true },

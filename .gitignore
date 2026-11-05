@@ -364,3 +364,4 @@ FodyWeavers.xsd
 
 # VS Code Local History extension backups
 .history/
+tests/.browser-shots/

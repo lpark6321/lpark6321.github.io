@@ -13,4 +13,10 @@
   --text2: #6a7a99;
   --font-mono: 'JetBrains Mono', monospace;
   --font-ui: 'Noto Sans TC', sans-serif;
+  /* 字級隨視窗寬度縮放：1280→約13.5px、1920→約15px、2560→16px */
+  --fs-base: clamp(13px, 0.2vw + 11px, 16px);
+  --fs-xs: calc(var(--fs-base) * 0.8);
+  --fs-sm: calc(var(--fs-base) * 0.875);
+  --fs-lg: calc(var(--fs-base) * 1.15);
+  --fs-xl: calc(var(--fs-base) * 1.5);
 }

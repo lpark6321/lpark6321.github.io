@@ -9,21 +9,26 @@ import {
   withVolumeEstimate
 } from './dashboardDataSource.js';
 import { subscribeFeedTick, tickNow } from './feedClock.js';
-import { isDailyRefreshDue, isTwFuturesDaySession, isTwQuoteSession, isTwSpotSession } from './marketCalendar.js';
-import { brokerCandlesUrl, fetchBrokerCandles, fetchBrokerQuote, fetchYahooCandles, isBridgeSource } from './marketSources.js';
+import { isDailyRefreshDue, isTwFuturesDaySession, isTwFuturesNightSession, isTwQuoteSession, isTwSpotSession } from './marketCalendar.js';
+import { brokerCandlesUrl, dateKeyFromUnix, fetchBrokerCandles, fetchBrokerQuote, fetchYahooCandles, isBridgeSource } from './marketSources.js';
+import { fetchMisFutures, fetchMisIndex, fetchMisOptions, fetchTaifexOptionsDaily } from './misQuotes.js';
 import { evaluatePatterns, refreshPatternHistory } from './patternEngine.js';
 import { tickPriceSimulator } from './priceSimulator.js';
 import { TOP10_CODES } from './quoteUtils.js';
+import { buildChain, listExpiries, parseTxoReport, pickExpiry } from './taifexOptions.js';
 import { fetchTwseDaily } from './twseData.js';
 import { updateYahooGlobalQuotes } from './yahooGlobalQuotes.js';
 import { updateYahooTwQuotes } from './yahooTwQuotes.js';
 
 const SPOT_SYMBOL = 'INDEX:TWII';
 const TREND_MIN_MS = 60000;
+// 選擇權全部履約價約 3000 檔：日盤中 15 秒抓一次，盤外 10 分鐘一次就夠。
+const OPTIONS_LIVE_MS = 15000;
+const OPTIONS_IDLE_MS = 10 * 60 * 1000;
 // 由「資料來源」寫入的 store 鍵，切換來源時清空。證交所盤後資料與型態提醒不受來源限制，不在這裡。
 const SOURCE_KEYS = [
   'taiex', 'futuresDay', 'futuresFull', 'topStocks', 'marketMap', 'globalIndices',
-  'taiexIntraday', 'stockTrends', 'selectedIntraday', 'watchQuotes', 'productDaily'
+  'taiexIntraday', 'stockTrends', 'selectedIntraday', 'watchQuotes', 'productDaily', 'optionsChain'
 ];
 
 let started = false;
@@ -34,6 +39,9 @@ let productDailyAt = 0;
 let productDailyFailedAt = 0;
 let twseAt = 0;
 let twseFailedAt = 0;
+let optionsAt = 0;
+let optionsRows = [];
+let optionsOrigin = null;
 
 // 失敗只記 log、回傳 false，不讓單一來源的錯誤擋住同一輪的其他請求。
 const settle = (label, promise) => promise.then(() => true, (error) => {
@@ -117,6 +125,77 @@ async function refreshTwseDaily(force) {
   twseFailedAt = 0;
 }
 
+// ---- 公開資料：證交所／期交所 MIS 補 Yahoo 沒有的加權成交金額、台指期、選擇權 ----
+
+// 加權累積成交金額（億，大盤「成交量」習慣看金額）與每分鐘走勢。盤中每輪抓；盤外只在 force 時抓。
+async function refreshMisIndex(source, force) {
+  if (!force && !isTwQuoteSession()) return;
+  const index = await fetchMisIndex();
+  if (getDashboardDataSource() !== source) return;
+  if (index.amount !== null) {
+    const amountYi = +(index.amount / 1e8).toFixed(2);
+    store.set('taiex', withVolumeEstimate({ ...store.get('taiex'), volume: amountYi, amountYi, sourceUpdatedAt: Date.now() }));
+  }
+  // 每分鐘只有收盤價：開高低都用收盤價；量是該分鐘成交金額（百萬元），6 區算均價用。
+  if (index.minutes.length) {
+    store.set('taiexIntraday', {
+      source,
+      candles: index.minutes.map(({ time, close, amount }) => ({ time, open: close, high: close, low: close, close, volume: amount }))
+    });
+  }
+}
+
+// 台指期近月：台指（日盤）＝日盤報價；台指(全)＝日盤時段用日盤，其他時段夜盤有成交就用夜盤。只在期貨交易時段輪詢。
+async function refreshMisFutures(source, force) {
+  const daySession = isTwFuturesDaySession();
+  if (!force && !daySession && !isTwFuturesNightSession()) return;
+  const [day, night] = await Promise.all([fetchMisFutures('day'), daySession ? null : fetchMisFutures('night')]);
+  if (getDashboardDataSource() !== source) return;
+  const full = !daySession && night?.price != null ? night : day;
+  [['futuresDay', day], ['futuresFull', full]].forEach(([key, quote]) => {
+    if (quote?.price == null) return;
+    store.set(key, { ...store.get(key), ...quote, source: 'mis', sourceSymbol: quote.symbol, sourceUpdatedAt: Date.now() });
+  });
+}
+
+// 選擇權鏈：日盤看期交所 MIS 的成交價；盤外 MIS 還留著當天成交就繼續用，清空了（隔天開盤前）才改讀期交所盤後檔。
+async function refreshOptions(source, force) {
+  const live = isTwFuturesDaySession();
+  if (!force && Date.now() - optionsAt < (live ? OPTIONS_LIVE_MS : OPTIONS_IDLE_MS)) return;
+  optionsAt = Date.now();
+  let rows = await fetchMisOptions();
+  let origin = { kind: 'mis' };
+  if (!live && !rows.some((row) => row.volume > 0)) {
+    const daily = await fetchTaifexOptionsDaily();
+    rows = parseTxoReport(daily);
+    origin = { kind: 'taifex-daily', date: String(daily[0]?.Date || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') };
+  }
+  if (getDashboardDataSource() !== source) return;
+  optionsRows = rows;
+  optionsOrigin = origin;
+  publishOptionsChain();
+}
+
+// 依 Page4 選的到期序列（optionsExpiry，沒選就挑最近一期）組鏈；換到期序列時不必重抓。
+function publishOptionsChain() {
+  if (!optionsRows.length) return;
+  const expiries = listExpiries(optionsRows);
+  const today = dateKeyFromUnix(Math.floor(Date.now() / 1000));
+  const picked = expiries.find((item) => item.contractMonth === store.get('optionsExpiry')) || pickExpiry(expiries, today) || expiries.at(-1);
+  if (!picked) return;
+  const spot = Number(store.get('futuresDay').price ?? store.get('taiex').price);
+  const chain = buildChain(optionsRows, picked.contractMonth, Number.isFinite(spot) ? spot : NaN);
+  // 沒有現價時用履約價的中間值當損益圖中心，圖才畫得出來。
+  const strikes = chain.calls.map((row) => row.strike);
+  store.set('optionsChain', {
+    ...chain,
+    spotPrice: Number.isFinite(spot) ? spot : strikes[Math.floor(strikes.length / 2)] ?? null,
+    contractMonth: picked.contractMonth,
+    expiries,
+    origin: optionsOrigin
+  });
+}
+
 // null/空字串視為缺值（Number(null) 是 0）。
 const roundedOr = (value, fallback, digits = 2) => (value != null && value !== '' && Number.isFinite(Number(value)) ? +Number(value).toFixed(digits) : fallback);
 
@@ -192,10 +271,13 @@ async function fetchAll(force) {
   if (source === 'mock') {
     tickPriceSimulator();
   } else if (source === 'yahoo') {
+    // 公開資料：個股、全球指數、日 K 走 Yahoo；加權成交金額與 1 分走勢、台指期、選擇權走證交所／期交所 MIS。
     jobs.push(
       settle('Yahoo 台股報價', updateYahooTwQuotes({ force })),
       settle('Yahoo 全球指數', updateYahooGlobalQuotes({ force })),
-      settle('Yahoo 加權 1 分 K', refreshTaiexIntraday(source, () => fetchYahooCandles({ symbol: SPOT_SYMBOL, timeframe: '1m' }), force)),
+      settle('MIS 加權成交金額與走勢', refreshMisIndex(source, force)),
+      settle('MIS 台指期', refreshMisFutures(source, force)),
+      settle('期交所選擇權', refreshOptions(source, force)),
       settle('Yahoo 個股 1 分 K', refreshStockTrends(force)),
       settle('Yahoo 選取個股 1 分 K', refreshSelectedIntraday(force)),
       settle('Yahoo 加權日 K', refreshProductDaily(source, force))
@@ -228,6 +310,9 @@ function resetSourceData() {
   selectedAt = 0;
   productDailyAt = 0;
   productDailyFailedAt = 0;
+  optionsAt = 0;
+  optionsRows = [];
+  optionsOrigin = null;
   store.reset(...SOURCE_KEYS);
 }
 
@@ -248,6 +333,7 @@ export function startMarketFeed() {
   });
   // 自選股有增減時立刻補抓報價與日 K（盤外也要抓得到新加入的股票）；換選取個股時立刻抓它的 1 分 K。
   store.subscribe('watchlist', () => runTick(true));
+  store.subscribe('optionsExpiry', publishOptionsChain);
   store.subscribe('selectedStock', () => {
     if (getDashboardDataSource() === 'yahoo') settle('Yahoo 選取個股 1 分 K', refreshSelectedIntraday(true));
   });

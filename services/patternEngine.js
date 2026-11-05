@@ -4,7 +4,7 @@ import { store } from '../data/store.js';
 import { loadSetting, saveSetting } from '../data/storage.js';
 import { bollinger, kd, macd, rsi, sma } from './indicators.js';
 import { isDailyRefreshDue, isTwQuoteSession } from './marketCalendar.js';
-import { dateKeyFromUnix, fetchYahooCandles } from './marketSources.js';
+import { dateKeyFromUnix, fetchStockDaily } from './marketSources.js';
 import { hasValue, liveQuoteMap, stockName } from './quoteUtils.js';
 
 export const PATTERN_REGISTRY = [
@@ -84,18 +84,6 @@ function saveAlerts(alerts) {
   saveSetting('patternAlerts', { date: alertsDate, alerts });
 }
 
-// 上市代碼抓 .TW，抓不到再試上櫃 .TWO。
-async function fetchDaily(code) {
-  for (const symbol of [code, `${code}.TWO`]) {
-    try {
-      const candles = await fetchYahooCandles({ symbol, timeframe: 'D' });
-      if (candles.length) return candles;
-    } catch {
-      // 換下一個代碼字尾再試。
-    }
-  }
-  return [];
-}
 
 // 每輪呼叫：只抓還沒抓過或該在收盤後重抓的自選股日 K；已不在自選股的代碼丟掉。
 export async function refreshPatternHistory() {
@@ -113,7 +101,7 @@ export async function refreshPatternHistory() {
       while (cursor < due.length) {
         const code = due[cursor];
         cursor += 1;
-        const candles = await fetchDaily(code);
+        const candles = await fetchStockDaily(code);
         // 抓不到（代理沒開、代碼錯）記下失敗時間，一分鐘後重試；舊的日 K 先留著用。
         dailyByCode.set(code, candles.length
           ? { candles, fetchedAt: Date.now(), failedAt: 0 }

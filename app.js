@@ -1,5 +1,5 @@
-// 主儀表板外殼（index_hide.html）：分頁路由、右上角的資料來源／更新頻率／手動更新、台股狀態倒數、服務連線狀態、
-// 設定備份／還原與鍵盤快捷鍵（1–7 切頁、R 手動更新）。
+// 主儀表板外殼（index_hide.html）：分頁路由、標頭的資料來源／更新頻率／手動更新、台股與期貨狀態倒數、
+// 提示（服務連不上、資料延遲、設定檔過期）、「⋯」選單（設定備份／還原）與鍵盤快捷鍵（1–7 切頁、R 手動更新）。
 import {
   DASHBOARD_DATA_SOURCES,
   POLL_INTERVAL_OPTIONS,
@@ -15,10 +15,17 @@ import {
 import { store } from './data/store.js';
 import { exportSettings, importSettings } from './data/storage.js';
 import { TW_HOLIDAY_YEARS } from './data/twMarketHolidays.js';
+import { TAIEX_DATA_DATE } from './data/taiexWeightedConstituents.js';
 import { subscribeSecond } from './services/feedClock.js';
 import { esc } from './services/html.js';
 import { createFilePicker, downloadJson } from './services/jsonFile.js';
-import { getTwMarketStatus, isTwQuoteSession } from './services/marketCalendar.js';
+import {
+  getTwFuturesStatus,
+  getTwMarketStatus,
+  isTwFuturesDaySession,
+  isTwFuturesNightSession,
+  isTwQuoteSession
+} from './services/marketCalendar.js';
 import { refreshMarketFeed, startMarketFeed } from './services/marketFeed.js';
 import { SERVICE_LABELS, failingServices, subscribeHealth } from './services/serviceHealth.js';
 
@@ -28,6 +35,7 @@ const dataSourceSelect = document.getElementById('dashboard-data-source');
 const pollSelect = document.getElementById('dashboard-poll-interval');
 const dataSourceStatus = document.getElementById('dashboard-data-source-status');
 const marketStatus = document.getElementById('dashboard-market-status');
+const futuresStatus = document.getElementById('dashboard-futures-status');
 const healthStatus = document.getElementById('dashboard-health');
 const manualRefreshButton = document.getElementById('dashboard-manual-refresh');
 let manualRefreshRunning = false;
@@ -66,11 +74,10 @@ function renderStatusText() {
   const source = getDashboardDataSource();
   let status = `全站共用：${getDashboardDataSourceLabel(source)}`;
   if (sourceInfo(source).feed) {
-    const paused = source === 'yahoo' && !isTwQuoteSession() ? '（台股非交易時段暫停）' : '';
     const updated = Number.isFinite(lastUpdatedAt)
-      ? `最後更新 ${new Date(lastUpdatedAt).toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}`
+      ? `更新 ${new Date(lastUpdatedAt).toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' })}`
       : '尚未更新';
-    status = `每 ${getPollIntervalSeconds()} 秒更新${paused}｜${updated}`;
+    status = expectLiveData() ? updated : `${updated}（非交易時段）`;
   }
   dataSourceStatus.textContent = manualRefreshStatus ? `${status}｜${manualRefreshStatus}` : status;
   manualRefreshButton.disabled = !sourceInfo(source).feed || manualRefreshRunning;
@@ -105,7 +112,7 @@ manualRefreshButton.addEventListener('click', refreshNow);
 
 subscribeDashboardDataSource(() => {
   renderDataSourceControl();
-  renderHealth();
+  renderNotes();
 });
 subscribePollInterval(renderDataSourceControl);
 // 「最後更新」取所有行情裡最新的一筆（DDE 收盤後只有期貨在更新，不能只看加權）；切換來源清空後回到「尚未更新」。
@@ -118,7 +125,7 @@ UPDATE_KEYS.forEach((key) => store.subscribe(key, () => {
   renderStatusText();
 }));
 
-// ---- 台股狀態與倒數（每秒）；休市表沒有今年時提醒重算設定檔 ----
+// ---- 台股與期貨狀態、倒數（每秒） ----
 
 const pad = (n) => String(n).padStart(2, '0');
 const WEEKDAY_ZH = '日一二三四五六';
@@ -134,26 +141,40 @@ function formatNextTime(at) {
   return `${t.getUTCMonth() + 1}/${t.getUTCDate()}（${WEEKDAY_ZH[t.getUTCDay()]}）${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}`;
 }
 
-function renderMarketStatus(now = new Date()) {
-  const status = getTwMarketStatus(now.getTime());
+// 「台股 盤中 距收 00:38:21」；超過一天寫日期，例如「休市（週六） 開 11/09（一）09:00」。
+function statusText(name, status, now) {
   const left = status.next.at - now.getTime();
-  const what = status.next.type === 'open' ? '開盤' : '收盤';
-  const when = left < 86400000 ? `距${what} ${formatCountdown(left)}` : `下次${what} ${formatNextTime(status.next.at)}`;
-  const reason = status.reason ? `（${status.reason}）` : '';
-  marketStatus.textContent = `台股 ${status.label}${reason}｜${when}`;
-  marketStatus.dataset.state = status.state;
-  renderStatusText(); // 「非交易時段暫停」在開收盤時自動切換
+  const what = status.next.type === 'open' ? '開' : '收';
+  const when = left < 86400000 ? `距${what} ${formatCountdown(left)}` : `${what} ${formatNextTime(status.next.at)}`;
+  return `${name} ${status.label}${status.reason ? `（${status.reason}）` : ''} ${when}`;
 }
 
-subscribeSecond(renderMarketStatus);
-renderMarketStatus();
+function renderMarketStatus(now = new Date()) {
+  const spot = getTwMarketStatus(now.getTime());
+  const futures = getTwFuturesStatus(now.getTime());
+  marketStatus.textContent = statusText('台股', spot, now);
+  marketStatus.dataset.state = spot.state;
+  futuresStatus.textContent = statusText('期貨', futures, now);
+  futuresStatus.dataset.state = futures.state;
+  renderStatusText(); // 開收盤時「非交易時段」自動切換
+  renderNotes();
+}
 
-// ---- 服務連線狀態（F1）；休市表過期提醒（F2） ----
+// ---- 提示：服務連不上、資料延遲、設定檔過期（休市表沒有今年、加權權重超過一個月） ----
 
 const isOnlineSite = location.hostname.endsWith('github.io');
 const taipeiYear = () => new Date(Date.now() + 8 * 3600 * 1000).getUTCFullYear();
+const WEIGHTS_STALE_MS = 31 * 86400000;
 
-function renderHealth() {
+// 目前的來源此刻應該有即時資料嗎：台股盤中，或有期貨報價的來源在期貨交易時段；模擬資料隨時都有。
+function expectLiveData(source = getDashboardDataSource()) {
+  const info = sourceInfo(source);
+  if (!info.feed) return false;
+  if (source === 'mock') return true;
+  return isTwQuoteSession() || ((info.futures || info.mis) && (isTwFuturesDaySession() || isTwFuturesNightSession()));
+}
+
+function renderNotes() {
   // 券商橋接只有在選了橋接來源時才算數（切走之後舊的失敗不再提示）。
   const failing = failingServices().filter((name) => name !== 'bridge' || sourceInfo().bridge);
   const notes = [];
@@ -162,15 +183,29 @@ function renderHealth() {
     notes.push(`連不上：${labels.join('、')}`);
     if (failing.includes('proxy') && isOnlineSite) notes.push('線上版需要在本機執行 GIO.cmd');
   }
+  // 盤中超過更新頻率 3 倍沒有新資料就提示（例如來源卡住、代理沒回應但沒有斷線）。
+  const lag = Date.now() - lastUpdatedAt;
+  if (expectLiveData() && Number.isFinite(lag) && lag > getPollIntervalSeconds() * 3000) notes.push(`資料延遲 ${Math.round(lag / 1000)} 秒`);
   if (!TW_HOLIDAY_YEARS.includes(taipeiYear())) notes.push(`休市表沒有 ${taipeiYear()} 年，需要重算設定檔（data/config/README.md）`);
-  healthStatus.textContent = notes.join('｜');
+  if (Date.now() - Date.parse(`${TAIEX_DATA_DATE}T00:00:00+08:00`) > WEIGHTS_STALE_MS) {
+    notes.push(`加權權重資料 ${TAIEX_DATA_DATE} 已超過一個月，需要重算設定檔`);
+  }
+  const text = notes.join('｜');
+  if (healthStatus.textContent !== text) healthStatus.textContent = text;
   healthStatus.hidden = !notes.length;
 }
 
-subscribeHealth(renderHealth);
-renderHealth();
+subscribeHealth(renderNotes);
+subscribeSecond(renderMarketStatus);
+renderMarketStatus();
 
-// ---- 設定備份／還原：匯出所有瀏覽器設定成一個檔，還原後重新載入讓各頁重新讀取 ----
+// ---- 「⋯」選單：設定備份／還原（匯出所有瀏覽器設定成一個檔，還原後重新載入讓各頁重新讀取） ----
+
+const menu = document.getElementById('dashboard-menu');
+// 點選單外面或選了項目就收起來。
+document.addEventListener('click', (event) => {
+  if (menu.open && (!menu.contains(event.target) || event.target.closest('.shell-menu__item'))) menu.open = false;
+});
 
 document.getElementById('dashboard-settings-export').addEventListener('click', () => {
   downloadJson(`dashboard-settings-${new Date().toISOString().slice(0, 10)}.json`, exportSettings());
@@ -250,6 +285,19 @@ tabs.forEach((tab) => {
 window.addEventListener('hashchange', () => {
   navigate(normalize(location.hash), { pushHash: false });
 });
+
+// 瀏覽器縮放（或把視窗拖到另一個縮放比例的螢幕）會改變 devicePixelRatio；固定大小的 canvas 不會觸發 resize，
+// 所以重新掛載目前頁面，讓所有圖用新的解析度重畫，不會糊掉。
+function watchPixelRatio() {
+  const query = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  query.addEventListener('change', () => {
+    const page = activePage;
+    activePage = null;
+    navigate(page, { pushHash: false });
+    watchPixelRatio();
+  }, { once: true });
+}
+watchPixelRatio();
 
 // 快捷鍵：1–7 切頁、R 手動更新；在輸入框裡打字或按著 Ctrl/Alt/Meta 時不攔。
 document.addEventListener('keydown', (event) => {

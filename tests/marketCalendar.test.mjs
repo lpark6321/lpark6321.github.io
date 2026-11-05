@@ -32,3 +32,18 @@ assert.deepEqual(status('2026-11-06T20:00:00'), ['收盤', '', 'open', '2026-11-
 assert.deepEqual(status('2026-11-07T10:00:00'), ['休市', '週六', 'open', '2026-11-09T09:00']);
 assert.deepEqual(status('2026-01-01T10:00:00'), ['休市', '中華民國開國紀念日', 'open', '2026-01-02T09:00']);
 assert.deepEqual(status('2026-02-11T15:00:00'), ['收盤', '', 'open', '2026-02-23T09:00'], 'skips Lunar New Year');
+
+// 台指期狀態：日盤、休息、夜盤（跨午夜）、週末與連假
+const { getTwFuturesStatus } = await import('../services/marketCalendar.js');
+const fut = (s) => {
+  const r = getTwFuturesStatus(tpe(s));
+  return [r.label, r.next.type, new Date(r.next.at + 8 * 3600e3).toISOString().slice(0, 16)];
+};
+assert.deepEqual(fut('2026-11-05T08:30:00'), ['盤前', 'open', '2026-11-05T08:45']);
+assert.deepEqual(fut('2026-11-05T10:00:00'), ['日盤', 'close', '2026-11-05T13:45']);
+assert.deepEqual(fut('2026-11-05T14:00:00'), ['休息', 'open', '2026-11-05T15:00']);
+assert.deepEqual(fut('2026-11-05T20:00:00'), ['夜盤', 'close', '2026-11-06T05:00']);
+assert.deepEqual(fut('2026-11-07T03:00:00'), ['夜盤', 'close', '2026-11-07T05:00'], '週五夜盤到週六清晨');
+assert.deepEqual(fut('2026-11-07T10:00:00'), ['休市', 'open', '2026-11-09T08:45']);
+assert.deepEqual(fut('2026-02-11T20:00:00'), ['夜盤', 'close', '2026-02-12T05:00'], '連假前最後交易日仍有夜盤');
+assert.deepEqual(fut('2026-02-12T10:00:00'), ['休市', 'open', '2026-02-23T08:45']);

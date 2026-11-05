@@ -1,16 +1,28 @@
-// Page4 選擇權策略：策略組合、到期損益圖（元）、選擇權鏈、Greeks。選擇權鏈目前是示範資料，真資料等期交所盤後資料接上。
+// Page4 選擇權策略：策略組合、到期損益圖（元）、選擇權鏈、Greeks。公開資料來源用期交所的成交價（盤中 MIS、盤後每日行情），其他來源是示範資料。
 import { store } from '../../data/store.js';
 import { StrategyBuilder } from '../../components/StrategyBuilder.js';
 import { PLChart } from '../../components/PLChart.js';
 import { GreeksTable } from '../../components/GreeksTable.js';
 import { ChainViewer } from '../../components/ChainViewer.js';
 import { bindCssVarSplitter } from '../../services/splitter.js';
+import { esc } from '../../services/html.js';
+
+const KIND_LABEL = { month: '月選', 'week-wed': '週三', 'week-fri': '週五' };
+
+// 選擇權鏈的來源標籤：期交所即時、期交所盤後（附資料日期），或示範資料。
+function originLabel(origin) {
+  if (origin?.kind === 'mis') return '期交所即時（成交價）';
+  if (origin?.kind === 'taifex-daily') return `期交所盤後 ${origin.date || ''}`;
+  return '示範資料';
+}
 
 // mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
-  // 選擇權鏈目前是內建示範資料，標題列明白標示。
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 4｜選擇權策略圖表 <span class="badge badge--mid">示範資料</span></h2></div>
+    <div class="page-topbar">
+      <h2>PAGE 4｜選擇權策略圖表 <span class="badge badge--mid" id="p4-origin">示範資料</span></h2>
+      <label class="p4-expiry">到期 <select id="p4-expiry" aria-label="到期序列"></select></label>
+    </div>
     <div class="p4-grid">
       <div id="p4-builder"></div>
       <div class="p4-main" id="p4-main">
@@ -28,7 +40,7 @@ export function mount(container) {
   const builder = new StrategyBuilder(container.querySelector('#p4-builder'), { defaultCollapsed: true });
   builder.root.classList.add('p4-resize');
   const chart = new PLChart(container.querySelector('#p4-chart'));
-  // 點選擇權鏈的價格：點賣價＝買進一口、點買價＝賣出一口。
+  // 點選擇權鏈的價格：點擊＝買進一口、Shift＋點擊＝賣出一口。
   const chain = new ChainViewer(container.querySelector('#p4-chain'), {
     onPick: ({ type, action, strike, premium }) => {
       store.set('strategyLegs', [...store.get('strategyLegs'), { type, action, strike, qty: 1, premium }]);
@@ -39,8 +51,29 @@ export function mount(container) {
   const greeks = new GreeksTable(container.querySelector('#p4-greeks'));
   greeks.root.classList.add('p4-resize');
 
+  const originEl = container.querySelector('#p4-origin');
+  const expiryEl = container.querySelector('#p4-expiry');
+  expiryEl.addEventListener('change', () => store.set('optionsExpiry', expiryEl.value));
+
+  // 到期序列選單：清單變了才重填，避免使用者正打開時被換掉。
+  let expiryKey = '';
+  const renderExpiries = (chainData) => {
+    const expiries = chainData.expiries || [];
+    const key = expiries.map((item) => item.contractMonth).join('|');
+    if (key !== expiryKey) {
+      expiryKey = key;
+      expiryEl.innerHTML = expiries.length
+        ? expiries.map((item) => `<option value="${esc(item.contractMonth)}">${esc(item.expiry)}（${KIND_LABEL[item.kind] || item.kind}）</option>`).join('')
+        : `<option value="">${esc(chainData.expiry || '--')}</option>`;
+    }
+    expiryEl.disabled = !expiries.length;
+    if (chainData.contractMonth) expiryEl.value = chainData.contractMonth;
+    originEl.textContent = originLabel(chainData.origin);
+  };
+
   const render = () => {
     const chainData = store.get('optionsChain');
+    renderExpiries(chainData);
     const legs = store.get('strategyLegs');
     chart.update(legs, chainData.spotPrice);
     chain.update(chainData);
@@ -49,10 +82,10 @@ export function mount(container) {
   };
 
   render();
-  const unsubLegs = store.subscribe('strategyLegs', render);
+  const unsubs = ['strategyLegs', 'optionsChain'].map((key) => store.subscribe(key, render));
 
   return () => {
-    unsubLegs();
+    unsubs.forEach((unsub) => unsub());
     stopMainSplit();
     builder.destroy();
     chart.destroy();

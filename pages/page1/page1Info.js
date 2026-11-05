@@ -76,7 +76,7 @@ const kv = (field, label = '') => `<div class="p1-kv"><span data-label="${field}
 export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
   const panel = new Panel(host, { badge: '1', title: '台指綜合資訊' });
   panel.root.classList.add('p1-resize');
-  panel.body.dataset.note = '需要期貨來源（DDE）';
+  panel.body.dataset.note = '需要期貨來源（公開資料或 DDE）';
   panel.setContent(`
     <div class="p1-side-table">
       <div class="p1-kv"><span>商品</span><strong>${PRODUCTS.map((p, i) => `<label class="p1-radio"><input type="radio" name="p1-product" value="${p}" ${i === 0 ? 'checked' : ''}>${p}</label>`).join('')}</strong></div>
@@ -147,7 +147,7 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
     const chgPct = futures?.prevClose ? (chg / futures.prevClose) * 100 : 0;
     const spread = futures && hasValue(taiex.price) ? futures.price - taiex.price : null;
     const info = sourceInfo();
-    panel.root.classList.toggle('is-unsupported', !(info.feed && info.futures));
+    panel.root.classList.toggle('is-unsupported', !(info.feed && (info.futures || info.mis)));
 
     const indexPrefix = stats.label === '加權' ? '加權' : '';
     set(labels.price, mode);

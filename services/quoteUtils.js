@@ -76,10 +76,10 @@ QUOTE_KEYS.forEach((key) => store.subscribe(key, () => {
   quoteMapCache = null;
 }));
 
-// 傳入 marketMap 就用它算（不快取）；不傳用 store 的、有快取。
+// 不傳或傳入的就是 store 目前那一份：用快取；傳別的 marketMap 才另外算。
 export function liveMarketMapQuotes(marketMap) {
-  if (marketMap) return buildMarketMapQuotes(marketMap);
-  marketMapCache ??= buildMarketMapQuotes(store.get('marketMap'));
+  if (marketMap && marketMap !== store.peek('marketMap')) return buildMarketMapQuotes(marketMap);
+  marketMapCache ??= buildMarketMapQuotes(store.peek('marketMap'));
   return marketMapCache;
 }
 
@@ -87,8 +87,8 @@ export function liveMarketMapQuotes(marketMap) {
 export function liveQuoteMap() {
   if (quoteMapCache) return quoteMapCache;
   const quotes = new Map(liveMarketMapQuotes());
-  Object.values(store.get('watchQuotes')).forEach((row) => quotes.set(String(row.code), row));
-  store.get('topStocks').filter((row) => hasValue(row.price)).forEach((row) => quotes.set(String(row.code), row));
+  Object.values(store.peek('watchQuotes')).forEach((row) => quotes.set(String(row.code), row));
+  store.peek('topStocks').filter((row) => hasValue(row.price)).forEach((row) => quotes.set(String(row.code), row));
   quoteMapCache = quotes;
   return quotes;
 }
@@ -99,5 +99,5 @@ export function quoteByCode(code) {
 
 // 中文股名：內建成分股名單 → 證交所全上市清單 → 空字串。
 export function stockName(code) {
-  return universeName(code) || store.get('twseDaily')?.rows.find((row) => row.code === code)?.name || '';
+  return universeName(code) || store.peek('twseDaily')?.rows.find((row) => row.code === code)?.name || '';
 }

@@ -171,7 +171,7 @@
   align-items: center;
   border-bottom: 1px solid #2a3242;
   padding: 5px 0;
-  font-size: 16px;
+  font-size: var(--fs-base);
 }
 
 .p1-kv strong {
@@ -179,14 +179,14 @@
 }
 
 .p1-kv-current strong {
-  font-size: 24px;
+  font-size: var(--fs-xl);
   line-height: 1;
   font-weight: 700;
 }
 
 .p1-radio {
   margin-left: 8px;
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 
 .p1-radio input {
@@ -217,14 +217,15 @@
   background: #121722;
 }
 
+/* 窄螢幕：左欄＋主圖一列，6、5 區並排一列，B 區一列；每格明確指定位置避免重疊 */
 @media (max-width: 1500px) {
-  .p1-layout { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); grid-template-rows: auto auto auto; }
-  .p1-right { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
-  .p1-center,
-  .p1-bottom { grid-column: auto; grid-row: auto; }
+  .p1-layout { grid-template-columns: minmax(240px, var(--p1-left-w)) minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  .p1-left { grid-column: 1; grid-row: 1; }
+  .p1-center { grid-column: 2; grid-row: 1; }
+  .p1-right { grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; }
+  .p1-bottom { grid-column: 1 / -1; grid-row: 3; }
   .p1-splitter-left,
   .p1-splitter-right { display: none; }
-  .p1-bottom { grid-column: 1 / -1; }
 }
 
 .p1-main-top {
@@ -256,8 +257,8 @@
 
 /* 多空關卡算法切換（樞紐點／振幅倍數／固定點數） */
 .p1-levels-ctrl { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-.p1-levels-ctrl select { height: 26px; }
-.p1-levels-ctrl input { height: 26px; flex: 1; min-width: 0; }
+.p1-levels-ctrl select { flex: none; padding: 3px 6px; }
+.p1-levels-ctrl input { padding: 3px 6px; flex: 1; min-width: 0; }
 .p1-levels-ctrl input[hidden] { display: none; }
 
 .p1-amp20-canvas { width: 100%; height: 100%; }

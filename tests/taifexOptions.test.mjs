@@ -33,7 +33,7 @@ const json = [
 const rows = parseTxoReport(json);
 assert.equal(rows.length, 7, '只留 TXO 日盤');
 assert.equal(parseTxoReport(json, { session: '盤後' }).length, 1);
-assert.deepEqual(rows[0], { contractMonth: '202611', strike: 44000, type: 'call', bid: 500, ask: 510, settle: 505, close: null, volume: 0, openInterest: 0 });
+assert.deepEqual(rows[0], { contractMonth: '202611', strike: 44000, type: 'call', bid: 500, ask: 510, settle: 505, last: null, volume: 0, openInterest: 0 });
 assert.equal(rows[2].ask, null, "'-' → null");
 assert.equal(rows[3].bid, null, "'' → null");
 
@@ -41,9 +41,10 @@ const chain = buildChain(rows, '202611', 44050);
 assert.equal(chain.underlying, 'TX');
 assert.equal(chain.expiry, '2026-11-18');
 assert.deepEqual(chain.calls.map((r) => r.strike), [44000, 44100]);
-assert.deepEqual(chain.puts[0], { strike: 44000, bid: 300, ask: 300, settle: 300 }, '買賣價都缺用結算價');
-assert.deepEqual(chain.calls[1], { strike: 44100, bid: 450, ask: null, settle: 455 }, '只缺一邊照實留 null');
-assert.deepEqual(chain.puts[1], { strike: 44100, bid: null, ask: null, settle: null });
+// 鏈上照實保留成交價、買賣價、結算價；取價優先序在 optionStrategy.chainPrice。
+assert.deepEqual(chain.puts[0], { strike: 44000, last: null, bid: null, ask: null, settle: 300 });
+assert.deepEqual(chain.calls[1], { strike: 44100, last: null, bid: 450, ask: null, settle: 455 });
+assert.deepEqual(chain.puts[1], { strike: 44100, last: null, bid: null, ask: null, settle: null });
 assert.deepEqual(buildChain(rows, '202611', 44000, { range: 0 }).calls.map((r) => r.strike), [44000], '只留價平');
 
 const expiries = listExpiries(rows);
@@ -56,3 +57,38 @@ assert.equal(pickExpiry(expiries, '2026-11-05', 'month').contractMonth, '202611'
 assert.equal(pickExpiry(expiries, '2026-11-19', 'month').contractMonth, '202612');
 assert.equal(pickExpiry(expiries, '2027-01-01'), null);
 
+
+// 期交所 MIS 選擇權（代理精簡格式）：月選用 YYYYMM、週選用到期日當序列；成交價優先
+const { parseMisOptions, parseMisFutures, parseMisIndex } = await import('../services/misQuotes.js');
+const { chainPrice } = await import('../services/optionStrategy.js');
+const misRows = parseMisOptions([
+  ['TXO-Q', '', '41574.72', '42948.91', '', '', '345169'],
+  ['TXO44000K6-O', '', '141.000', '53.000', '120.000', '140.000', '402'],
+  ['TXO44000W6-O', '', '0.000', '300.000', '0.000', '0.000', '0'],
+  ['TXU44000K6-O', '2026/11/06', '27.5', '3.4', '23', '28.5', '2387']
+], new Date('2026-11-05T00:00:00Z'));
+assert.deepEqual(misRows.map((r) => [r.contractMonth, r.type, r.strike, r.last]), [
+  ['202611', 'call', 44000, 141], ['202611', 'put', 44000, null], ['TXU-2026-11-06', 'call', 44000, 27.5]
+]);
+assert.deepEqual(listExpiries(misRows).map((e) => [e.contractMonth, e.expiry, e.kind]), [
+  ['TXU-2026-11-06', '2026-11-06', 'week-fri'], ['202611', '2026-11-18', 'month']
+]);
+const misChain = buildChain(misRows, '202611', 44000);
+assert.equal(chainPrice(misChain, 'call', 44000, 'buy'), 141, '有成交用成交價');
+assert.equal(chainPrice(misChain, 'call', 44000, 'sell'), 141);
+assert.equal(chainPrice(misChain, 'put', 44000, 'buy'), 300, '沒成交也沒買賣價用參考價');
+
+// 近月台指期：跳過現貨與遠月；沒有成交時 price 是 null
+const fut = parseMisFutures([
+  { SymbolID: 'TXF-S', CLastPrice: '41596.59' },
+  { SymbolID: 'TXFL6-F', CLastPrice: '41917', CRefPrice: '43287' },
+  { SymbolID: 'TXFK6-F', CLastPrice: '41816.00', CRefPrice: '43203.00', COpenPrice: '43013', CHighPrice: '43114', CLowPrice: '41751', CTotalVolume: '83674' }
+]);
+assert.deepEqual([fut.symbol, fut.price, fut.prevClose, fut.change, fut.volume], ['TXFK6-F', 41816, 43203, -1387, 83674]);
+assert.equal(parseMisFutures([{ SymbolID: 'TXFK6-M', CLastPrice: '', CRefPrice: '41882' }]).price, null);
+assert.equal(parseMisFutures([{ SymbolID: 'TXFA0-F', CLastPrice: '1' }, { SymbolID: 'TXFL9-F', CLastPrice: '2' }]).price, 2, '2029/12 比 2030/01 近');
+
+// 加權：累積成交金額與每分鐘資料
+const idx = parseMisIndex({ staticObj: { tz: '854873020980', tv: '13767845', tr: '3456951' }, ohlcArray: [{ c: '42596.43', s: '15729', t: '1793840520000' }, { c: '42551.59', s: '38693', t: '1793840460000' }] });
+assert.equal(idx.amount, 854873020980);
+assert.deepEqual(idx.minutes.map((m) => m.close), [42551.59, 42596.43], '依時間排序');

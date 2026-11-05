@@ -1,7 +1,9 @@
 // Page5 策略選股：用證交所盤後資料（store.twseDaily，由 marketFeed 每天收盤後抓）篩選上市股票。
-// 這是盤後資料，不受右上角「資料來源」限制。
+// 這是盤後資料，不受右上角「資料來源」限制；只有技術指標條件要日 K，限公開資料（yahoo）來源。
 import { store, isValidStockCode, sanitizeWatchlist } from '../../data/store.js';
-import { applyFilters } from '../../services/filterEngine.js';
+import { applyFilters, applyHistoryFilters, hasHistoryFilters, historyCandidates } from '../../services/filterEngine.js';
+import { loadScreenerCandles, screenerHistoryAvailable } from '../../services/screenerHistory.js';
+import { subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
 import { FilterPanel } from '../../components/FilterPanel.js';
 import { ResultTable } from '../../components/ResultTable.js';
 import { WatchlistAddBar } from '../../components/WatchlistAddBar.js';
@@ -61,18 +63,40 @@ export function mount(container) {
     }
   });
 
-  const rows = () => store.get('twseDaily')?.rows || [];
+  // 約 1000 列，唯讀取用（篩選只產生新陣列，不改原資料）。
+  const rows = () => store.peek('twseDaily')?.rows || [];
   let filtered = [];
-  const runFilters = ({ enabled, settings }) => {
-    filtered = applyFilters(rows(), enabled, settings);
+  // 每次篩選遞增；抓日 K 期間又開始新的篩選（或離開頁面）時，舊的結果直接丟掉。
+  let runSeq = 0;
+  // fetchHistory=false 用在頁面載入與證交所資料更新：不主動抓日 K，技術指標條件先不套用。
+  const runFilters = async ({ enabled, settings }, fetchHistory = true) => {
+    const seq = ++runSeq;
+    const all = rows();
+    let matched = applyFilters(all, enabled, settings);
+    let note = '';
+    if (hasHistoryFilters(enabled) && all.length) {
+      if (fetchHistory) {
+        const codes = historyCandidates(matched).map((row) => row.code);
+        const candles = await loadScreenerCandles(codes, (done, total) => {
+          if (seq === runSeq) filter.showMessage(`抓日 K ${done}/${total}`);
+        });
+        if (seq !== runSeq) return;
+        matched = applyHistoryFilters(matched, enabled, settings, candles);
+        note = `（日 K 檢查 ${codes.length} 檔）`;
+      } else {
+        note = '（技術指標條件未套用，請按「執行篩選」）';
+      }
+    }
+    filtered = matched;
     results.update(filtered);
-    filter.showMessage(rows().length ? `符合 ${filtered.length} / ${rows().length} 檔` : '');
+    filter.showMessage(all.length ? `符合 ${filtered.length} / ${all.length} 檔${note}` : '');
   };
 
   const filter = new FilterPanel(container.querySelector('#p5-filters'), {
     onRun: runFilters,
     onLoadWatchlist: openWatchlistFile
   });
+  filter.setHistoryAvailable(screenerHistoryAvailable());
 
   const exportButton = container.querySelector('#p5-export');
   exportButton.addEventListener('click', () => {
@@ -88,13 +112,19 @@ export function mount(container) {
   const render = () => {
     const data = store.get('twseDaily');
     dateEl.textContent = data ? `證交所 ${data.date.replaceAll('-', '/')} 收盤` : '證交所資料載入中';
-    runFilters(filter.collect());
+    runFilters(filter.collect(), false);
   };
   render();
   const unsub = store.subscribe('twseDaily', render);
+  const unsubSource = subscribeDashboardDataSource(() => {
+    filter.setHistoryAvailable(screenerHistoryAvailable());
+    render();
+  });
 
   return () => {
+    runSeq += 1;
     unsub();
+    unsubSource();
     stopMainSplit();
     openWatchlistFile.destroy();
     filter.destroy();

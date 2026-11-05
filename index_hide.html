@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style/variables.css">
   <link rel="stylesheet" href="./style/layout.css">
+  <link rel="stylesheet" href="./style/header.css">
   <link rel="stylesheet" href="./style/components.css">
   <link rel="stylesheet" href="./pages/page1/page1.css">
   <link rel="stylesheet" href="./pages/page2/page2.css">
@@ -20,36 +21,43 @@
 </head>
 <body>
   <div class="shell">
+    <!-- 標頭兩列：上面是標題與分頁，下面是資料來源控制、狀態與提示；窄的時候自動換行。 -->
     <header class="shell__header">
-      <div class="shell__brand">
+      <div class="shell__top">
         <h1 class="shell__title">Taiwan Stock Dashboard</h1>
-        <p class="shell__subtitle">Pure HTML + CSS + ES Modules</p>
+        <nav class="tabbar" aria-label="分頁（快捷鍵 1–7）">
+          <button class="tabbar__tab" type="button" data-page="page1" title="PAGE 1 Futures Overview（快捷鍵 1）">1 期貨總覽</button>
+          <button class="tabbar__tab" type="button" data-page="page2" title="PAGE 2 Market Temperature（快捷鍵 2）">2 台股溫度計</button>
+          <button class="tabbar__tab" type="button" data-page="page3" title="PAGE 3 Watchlist Alerts（快捷鍵 3）">3 自選提醒</button>
+          <button class="tabbar__tab" type="button" data-page="page4" title="PAGE 4 Options Strategy（快捷鍵 4）">4 選擇權</button>
+          <button class="tabbar__tab" type="button" data-page="page5" title="PAGE 5 Stock Screener（快捷鍵 5）">5 選股</button>
+          <button class="tabbar__tab" type="button" data-page="page6" title="PAGE 6 Market Map（快捷鍵 6）">6 市場地圖</button>
+          <button class="tabbar__tab" type="button" data-page="page7" title="PAGE 7 Global Indices（快捷鍵 7）">7 全球指數</button>
+        </nav>
       </div>
-      <div class="shell__actions">
-        <a class="shell__link" href="./index.html">Data Lab</a>
+      <div class="shell__bar">
         <label class="shell-source" for="dashboard-data-source">
           <span class="shell-source__label">資料來源</span>
           <select class="shell-source__select" id="dashboard-data-source"></select>
         </label>
         <label class="shell-source" for="dashboard-poll-interval">
-          <span class="shell-source__label">更新頻率</span>
+          <span class="shell-source__label">頻率</span>
           <select class="shell-source__select" id="dashboard-poll-interval"></select>
         </label>
         <button class="shell-refresh" type="button" id="dashboard-manual-refresh" title="快捷鍵 R">手動更新</button>
         <span class="shell-source-status" id="dashboard-data-source-status"></span>
         <span class="shell-market" id="dashboard-market-status"></span>
+        <span class="shell-market" id="dashboard-futures-status"></span>
         <span class="shell-health" id="dashboard-health" role="status" hidden></span>
-        <button class="shell-refresh" type="button" id="dashboard-settings-export" title="把自選股、策略、篩選條件等所有設定存成一個檔案">設定備份</button>
-        <button class="shell-refresh" type="button" id="dashboard-settings-import" title="從備份檔還原所有設定">設定還原</button>
-        <nav class="tabbar" aria-label="Pages">
-          <button class="tabbar__tab" type="button" data-page="page1">PAGE 1 Futures Overview</button>
-          <button class="tabbar__tab" type="button" data-page="page2">PAGE 2 Market Temperature</button>
-          <button class="tabbar__tab" type="button" data-page="page3">PAGE 3 Watchlist Alerts</button>
-          <button class="tabbar__tab" type="button" data-page="page4">PAGE 4 Options Strategy</button>
-          <button class="tabbar__tab" type="button" data-page="page5">PAGE 5 Stock Screener</button>
-          <button class="tabbar__tab" type="button" data-page="page6">PAGE 6 Market Map</button>
-          <button class="tabbar__tab" type="button" data-page="page7">PAGE 7 Global Indices</button>
-        </nav>
+        <details class="shell-menu" id="dashboard-menu">
+          <summary class="shell-refresh" title="更多">⋯</summary>
+          <div class="shell-menu__list">
+            <button class="shell-menu__item" type="button" id="dashboard-settings-export" title="把自選股、策略、篩選條件等所有設定存成一個檔案">設定備份</button>
+            <button class="shell-menu__item" type="button" id="dashboard-settings-import" title="從備份檔還原所有設定">設定還原</button>
+            <a class="shell-menu__item" href="./index.html">Data Lab</a>
+            <span class="shell-menu__hint">快捷鍵：1–7 切頁、R 手動更新</span>
+          </div>
+        </details>
       </div>
     </header>
     <main id="app" class="shell__main" aria-live="polite"></main>

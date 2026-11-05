@@ -67,13 +67,16 @@ function chainRow(chain, type, strike) {
 export function chainPrice(chain, type, strike, action) {
   const row = chainRow(chain, type, strike);
   if (!row) return null;
+  // 真資料用最後成交價；沒有成交（或示範資料）才看買賣價，再沒有用結算／參考價。
+  if (Number(row.last) > 0) return Number(row.last);
   const quote = action === 'buy' ? row.ask : row.bid;
   if (Number.isFinite(Number(quote)) && quote > 0) return Number(quote);
   return Number.isFinite(Number(row.settle)) && row.settle > 0 ? Number(row.settle) : null;
 }
 
-// 理論計算用的權利金：買賣價中間，沒有就用結算價。
+// 理論計算用的權利金：成交價，沒有就用買賣價中間，再沒有用結算價。
 function fairPrice(row) {
+  if (row?.last > 0) return row.last;
   if (row && row.bid > 0 && row.ask > 0) return (row.bid + row.ask) / 2;
   return row?.settle > 0 ? row.settle : null;
 }

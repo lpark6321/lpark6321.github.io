@@ -1,0 +1,132 @@
+/* 主儀表板標頭（index_hide.html）：上列標題＋分頁、下列資料來源控制＋狀態＋提示＋「⋯」選單。
+   字級跟著 variables.css 的 --fs-* 縮放；寬度不夠時各列自動換行，不出現橫向捲軸。 */
+.shell__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border2);
+  background: #06080b;
+}
+.shell__top,
+.shell__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.shell__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  white-space: nowrap;
+}
+.tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tabbar__tab {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+}
+.tabbar__tab:hover { color: var(--text); border-color: var(--border2); }
+.tabbar__tab.is-active {
+  color: #000;
+  background: var(--gold);
+  border-color: var(--gold);
+  font-weight: 700;
+}
+
+.shell-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--card);
+  white-space: nowrap;
+}
+.shell-source__label {
+  color: var(--gold);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.shell-source__select {
+  height: 26px;
+  padding: 0 24px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #111827;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+.shell-refresh {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--gold);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.shell-refresh:hover:not(:disabled) { border-color: var(--gold); background: rgba(245, 200, 66, 0.12); }
+.shell-refresh:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.shell-source-status,
+.shell-market,
+.shell-health {
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.shell-source-status { color: var(--text2); }
+.shell-market { color: var(--text2); font-family: var(--font-mono); }
+.shell-market[data-state="open"],
+.shell-market[data-state="day"],
+.shell-market[data-state="night"] { color: var(--gold); }
+/* 提示可能很長（好幾則）：允許換行，不把標頭撐出橫向捲軸。 */
+.shell-health { color: var(--red); white-space: normal; }
+
+/* 「⋯」選單：設定備份／還原、Data Lab */
+.shell-menu { position: relative; margin-left: auto; }
+.shell-menu > summary { list-style: none; display: inline-flex; align-items: center; }
+.shell-menu > summary::-webkit-details-marker { display: none; }
+.shell-menu__list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  display: grid;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: var(--card2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.shell-menu__item {
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.shell-menu__item:hover { background: rgba(245, 200, 66, 0.12); color: var(--gold); }
+.shell-menu__hint { padding: 6px 10px; color: var(--text2); font-size: var(--fs-xs); }

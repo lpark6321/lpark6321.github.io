@@ -18,12 +18,10 @@
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 10px;
   min-height: 38px;
-  overflow-x: auto;
-  overflow-y: hidden;
   position: relative;
   z-index: 6;
 }
@@ -74,7 +72,7 @@
   background: transparent;
   color: var(--text2);
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--fs-lg);
   width: 24px;
   height: 24px;
   display: flex;
@@ -94,7 +92,7 @@
   display: grid;
   grid-template-columns: 64px 1fr;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   padding: 5px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -113,12 +111,12 @@
 }
 
 .tm-controls {
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 8px;
-  min-width: max-content;
+  flex-wrap: wrap; /* 窄時換到第二行，不出水平捲軸 */
+  gap: 6px 8px;
 }
 
 .tm-ctrl-group {
@@ -128,7 +126,7 @@
 }
 
 .tm-ctrl-label {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #f3d37a;
   letter-spacing: 0.08em;
   font-weight: 800;
@@ -144,7 +142,7 @@
 
 .tm-btn {
   padding: 2px 8px;
-  font-size: 9px;
+  font-size: var(--fs-sm);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text2);
@@ -190,7 +188,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text2);
-  font-size: 16px;
+  font-size: var(--fs-lg);
   font-weight: 700;
   pointer-events: none;
 }
@@ -202,6 +200,7 @@
   color: var(--text, #dfe7f7);
   border: 1px solid var(--border2, #263050);
   border-radius: 3px;
+  font: inherit;
 }
 
-.p6-data-date { order: 2; color: var(--text2); font-size: 12px; white-space: nowrap; }
+.p6-data-date { order: 2; color: var(--text2); font-size: var(--fs-sm); white-space: nowrap; }

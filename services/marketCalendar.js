@@ -122,6 +122,28 @@ export function getTwMarketStatus(time = Date.now()) {
   };
 }
 
+// 台指期狀態：日盤 08:45–13:45、夜盤 15:00–次日 05:00（交易日晚上才有夜盤，凌晨屬於前一天的夜盤）。
+// 回傳 { state: 'day'|'night'|'closed'|'holiday', label, reason, next: { type: 'open'|'close', at(ms) } }。
+export function getTwFuturesStatus(time = Date.now()) {
+  const { day } = taipeiDayAndMinute(time);
+  const prevDay = new Date(Date.parse(`${day}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  const at = (d, hhmm) => taipeiMinuteAt(d, minutesOf(hhmm));
+  const { futuresDay, futuresNight } = TW_SESSIONS;
+  const reason = twClosedReason(day);
+  if (!twClosedReason(prevDay) && time < at(day, futuresNight.close)) {
+    return { state: 'night', label: '夜盤', reason: '', next: { type: 'close', at: at(day, futuresNight.close) } };
+  }
+  if (!reason) {
+    if (time < at(day, futuresDay.open)) return { state: 'closed', label: '盤前', reason, next: { type: 'open', at: at(day, futuresDay.open) } };
+    if (time < at(day, futuresDay.close)) return { state: 'day', label: '日盤', reason, next: { type: 'close', at: at(day, futuresDay.close) } };
+    if (time < at(day, futuresNight.open)) return { state: 'closed', label: '休息', reason, next: { type: 'open', at: at(day, futuresNight.open) } };
+    return { state: 'night', label: '夜盤', reason, next: { type: 'close', at: at(nextDay(day), futuresNight.close) } };
+  }
+  let next = nextDay(day);
+  for (let i = 0; i < 30 && twClosedReason(next); i += 1) next = nextDay(next);
+  return { state: 'holiday', label: '休市', reason, next: { type: 'open', at: at(next, futuresDay.open) } };
+}
+
 // 盤後資料（日 K、證交所盤後表）的重抓時機：從沒抓過、跨日，或今天已過收盤後的更新點（14:30、18:00）但上次是在那之前抓的。
 const AFTER_CLOSE_REFRESH_MINUTES = [14 * 60 + 30, 18 * 60];
 

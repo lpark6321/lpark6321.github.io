@@ -109,7 +109,7 @@
 .p2-vol-box strong {
   display: block;
   margin-top: 4px;
-  font-size: 22px;
+  font-size: var(--fs-xl);
   font-family: JetBrains Mono;
 }
 
@@ -143,7 +143,7 @@
 
 .p2-pie-title {
   color: var(--gold);
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -184,43 +184,15 @@
   display: block;
 }
 
+/* 窄螢幕改兩欄：左上 1 區、左下 3 區、右側 2 區跨兩列，4～6 區整列三欄；不再整頁單欄拉長 */
 @media (max-width: 1500px) {
-  .p2-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-  }
-
-  .p2-left {
-    grid-row: auto;
-  }
-
-  .p2-center {
-    grid-template-columns: 1fr;
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .p2-center > .panel:first-of-type,
-  .p2-center > .panel:last-of-type {
-    grid-column: auto;
-  }
-
+  .p2-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .p2-main-splitter,
-  .p2-center-splitter {
-    display: none;
-  }
-
-  .p2-bottom {
-    grid-template-columns: 1fr;
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .p2-pie-layout {
-    grid-template-rows: auto auto;
-  }
-
-  .p2-pie-top {
-    grid-template-columns: 1fr;
-  }
+  .p2-center-splitter { display: none; }
+  .p2-left { grid-column: 1; grid-row: 1; }
+  .p2-center { display: contents; }
+  .p2-center > .panel:first-of-type { grid-column: 2; grid-row: 1 / 3; }
+  .p2-center > .panel:last-of-type { grid-column: 1; grid-row: 2; }
+  .p2-bottom { grid-column: 1 / -1; grid-row: 3; }
+  .p2-gauge-wrap { max-width: 420px; margin: 0 auto; }
 }

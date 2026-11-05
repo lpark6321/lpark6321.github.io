@@ -24,7 +24,7 @@
   min-width: 0;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1100px) {
   .p5-grid {
     grid-template-columns: 1fr;
   }
@@ -41,3 +41,6 @@
 
 .p5-topbar-tools { display: flex; gap: 8px; align-items: center; }
 .p5-note { color: var(--text2); }
+
+/* 技術指標條件在不支援日 K 的資料來源下停用 */
+#p5-filters [data-history].is-disabled { opacity: 0.5; }

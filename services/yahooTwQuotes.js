@@ -26,6 +26,9 @@ function mapYahooTaiexQuote(raw, base) {
     ...fields,
     high: Math.max(fields.high || fields.price, fields.price),
     low: Math.min(fields.low || fields.price, fields.price),
+    // Yahoo 的 ^TWII 沒有成交量；大盤成交金額由 MIS 寫入（marketFeed.refreshMisIndex），這裡保留不蓋掉。
+    volume: base.volume,
+    amountYi: base.amountYi,
     source: 'yahoo',
     sourceSymbol: YAHOO_TAIEX_SYMBOL,
     sourceUpdatedAt: Date.now(),
@@ -74,7 +77,7 @@ function updateTopStocksFromQuotes(rawMap) {
 
 // marketMap 只有這裡會寫：名單每檔一列，Yahoo 沒回的代碼保留上一筆（第一次是沒有 source、沒有報價的名單列）。
 function updateMarketMapFromQuotes(rawMap) {
-  const previousByCode = new Map((store.get('marketMap') || []).map((row) => [String(row.code), row]));
+  const previousByCode = new Map((store.peek('marketMap') || []).map((row) => [String(row.code), row]));
   let changed = false;
   const next = MARKET_UNIVERSE.map((stock) => {
     const previous = previousByCode.get(stock.code) || { ...stock };
@@ -115,7 +118,6 @@ export async function updateYahooTwQuotes({ force = false } = {}) {
 
     const raw = rawMap.get(YAHOO_TAIEX_SYMBOL);
     const next = raw ? mapYahooTaiexQuote(raw, store.get('taiex')) : null;
-    // Yahoo 的 ^TWII 成交量是 0，算不出預估量時清成 null，畫面顯示「--」而不是舊值。
     if (next) store.set('taiex', withVolumeEstimate(next));
     return true;
   })();

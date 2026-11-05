@@ -117,7 +117,10 @@ const state = {
   enabledPatterns: loadPatterns(),
   // 型態警示由 services/patternEngine.js 依自選股日 K 與即時價計算。
   patternAlerts: [],
-  // 選擇權鏈目前是示範資料（真資料要等期交所盤後資料接上）；到期日固定在下個月的第三個星期三，Greeks 由 Black-Scholes 算。
+  // Page4 選的到期序列（contractMonth）；空字串＝最近一期。不存瀏覽器。
+  optionsExpiry: '',
+  // 選擇權鏈：公開資料來源由 marketFeed 寫入期交所的真資料（origin 標明來源）；其他來源是這份示範資料，
+  // 到期日固定在下個月的第三個星期三，Greeks 由 Black-Scholes 算。
   optionsChain: {
     underlying: 'TX',
     spotPrice: 19850,
@@ -180,6 +183,11 @@ export const store = {
   },
   get(key) {
     return clone(state[key]);
+  },
+  // 唯讀取值：直接回傳 store 裡那一份（不複製），給每個節拍要讀很多次的大資料用（市場地圖約 1000 列、證交所盤後表）。
+  // 呼叫端絕對不能修改它（包括 sort、push）；要改請用 get() 拿複本。set() 一律換成新物件，所以拿到的那份不會被別人改。
+  peek(key) {
+    return state[key];
   },
   // 還原成初始值（例如切換資料來源時清掉上一個來源的報價）。
   reset(...keys) {

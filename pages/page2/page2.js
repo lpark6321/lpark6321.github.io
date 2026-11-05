@@ -335,7 +335,7 @@ export function mount(container) {
   };
 
   const renderAttackGauges = () => {
-    const stats = buildCombinedAttackStats(store.get('marketMap'));
+    const stats = buildCombinedAttackStats(store.peek('marketMap'));
     gaugeBull.update({
       value: stats.limitUp,
       activeValue: stats.up,
@@ -355,7 +355,7 @@ export function mount(container) {
   };
 
   const renderPies = () => {
-    const marketMap = store.get('marketMap');
+    const marketMap = store.peek('marketMap');
     [['台灣50', TW50_BY_CODE, 50], ['中型100', MID100_BY_CODE, 100]].forEach(([key, constituents, total]) => {
       const canvas = p5.body.querySelector(`.p2-pie-card[data-key="${key}"] canvas`);
       if (canvas) drawSectorPie(canvas, buildConstituentPieSegments(constituents, marketMap, total), 240);
@@ -374,7 +374,7 @@ export function mount(container) {
     );
 
     const taiex = store.get('taiex');
-    const marketMap = store.get('marketMap');
+    const marketMap = store.peek('marketMap');
     const categoryStats = buildCategoryQuoteStats(taiex, stocks, marketMap);
 
     drawCategoryCandle(container.querySelector('#p2-c7'), categoryStats, { minV: -4, maxV: 4, ticks: [-4, -2, 0, 2, 4], maxWidth: 504 });

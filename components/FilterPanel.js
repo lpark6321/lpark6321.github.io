@@ -33,7 +33,7 @@ export class FilterPanel {
     container.appendChild(this.root);
 
     this.root.querySelector('.filters').innerHTML = FILTER_REGISTRY.map((f) => `
-      <div>
+      <div ${f.needsHistory ? 'data-history' : ''}>
         <label class="filter-panel__check">
           <input type="checkbox" data-id="${f.id}" ${this.enabled.has(f.id) ? 'checked' : ''}> ${esc(f.name)}
         </label>
@@ -47,6 +47,16 @@ export class FilterPanel {
     this.root.querySelector('.load-watch').addEventListener('click', () => this.onLoadWatchlist());
   }
 
+  // 技術指標條件要日 K，資料來源不支援時整組停用（勾選狀態照存，換回來還在）。
+  setHistoryAvailable(available) {
+    this.root.querySelectorAll('[data-history]').forEach((item) => {
+      item.classList.toggle('is-disabled', !available);
+      item.title = available ? '' : '需要公開資料來源';
+      item.querySelectorAll('input').forEach((input) => { input.disabled = !available; });
+    });
+  }
+
+  // 回傳的 enabled 不含停用中的條件；存檔則保留所有勾選。
   collect() {
     this.enabled = new Set([...this.root.querySelectorAll('input[type=checkbox]:checked')].map((x) => x.dataset.id));
     this.root.querySelectorAll('input[data-key]').forEach((input) => {
@@ -54,7 +64,8 @@ export class FilterPanel {
       this.settings[input.dataset.key] = Number.isFinite(value) ? value : DEFAULT_FILTER_SETTINGS[input.dataset.key];
     });
     saveSetting('screenFilters', { enabled: [...this.enabled], settings: this.settings });
-    return { enabled: [...this.enabled], settings: { ...this.settings } };
+    const usable = [...this.root.querySelectorAll('input[type=checkbox]:checked:not(:disabled)')].map((x) => x.dataset.id);
+    return { enabled: usable, settings: { ...this.settings } };
   }
 
   showMessage(text) {

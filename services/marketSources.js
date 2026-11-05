@@ -118,6 +118,19 @@ export async function fetchYahooCandles({ symbol, timeframe = 'D' }) {
     .filter(Boolean);
 }
 
+// 個股日 K（型態提醒、Page5 技術指標）：上市代碼抓 .TW，抓不到再試上櫃 .TWO；都沒有回傳空陣列。
+export async function fetchStockDaily(code) {
+  for (const symbol of [code, `${code}.TWO`]) {
+    try {
+      const candles = await fetchYahooCandles({ symbol, timeframe: 'D' });
+      if (candles.length) return candles;
+    } catch {
+      // 換下一個代碼字尾再試。
+    }
+  }
+  return [];
+}
+
 // 預留給券商 API：前端只假設回傳 data/candles 陣列，欄位仍會經 normalizeOhlcv。
 export async function fetchBrokerCandles({ brokerUrl, symbol, timeframe = 'D' }) {
   if (!brokerUrl) {

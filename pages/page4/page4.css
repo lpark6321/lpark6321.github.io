@@ -63,3 +63,8 @@
 /* 選擇權鏈：價格格子可點（點賣價買進、點買價賣出） */
 .chain-table td.chain-pick { cursor: pointer; font-variant-numeric: tabular-nums; }
 .chain-table td.chain-pick:hover { background: rgba(245, 200, 66, .15); color: var(--gold); }
+
+/* 選擇權鏈：今天沒有成交、價格取自買賣價或參考價的格子用灰色斜體 */
+.chain-table td.chain-pick--ref { color: var(--text2); font-style: italic; }
+.p4-expiry { display: inline-flex; align-items: center; gap: 6px; color: var(--text2); font-size: var(--fs-sm); }
+.p4-expiry select { min-width: 12em; }
