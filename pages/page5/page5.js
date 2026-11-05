@@ -5,13 +5,20 @@ import { applyFilters } from '../../services/filterEngine.js';
 import { FilterPanel } from '../../components/FilterPanel.js';
 import { ResultTable } from '../../components/ResultTable.js';
 import { WatchlistAddBar } from '../../components/WatchlistAddBar.js';
-import { bindHorizontalSplitter } from '../../services/splitter.js';
-import { createFilePicker, readJsonArrayFile } from '../../services/jsonFile.js';
+import { bindCssVarSplitter } from '../../services/splitter.js';
+import { toCsv } from '../../services/csv.js';
+import { createFilePicker, downloadCsv, readJsonArrayFile } from '../../services/jsonFile.js';
 
-// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
+// 匯出 CSV 的欄位（與結果表同順序，不含勾選與停用的趨勢欄）。
+const CSV_COLUMNS = [
+  ['code', '代碼'], ['name', '名稱'], ['price', '收盤價'], ['changePct', '漲跌%'], ['pe', '本益比'],
+  ['dividendYield', '殖利率%'], ['pb', '股價淨值比'], ['volume', '成交量(張)']
+];
+
+// mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 5｜策略選股 <span class="badge badge--mid" id="p5-data-date">證交所資料載入中</span></h2><span id="p5-note" style="color:var(--text2)"></span></div>
+    <div class="page-topbar"><h2>PAGE 5｜策略選股 <span class="badge badge--mid" id="p5-data-date">證交所資料載入中</span></h2><span class="p5-topbar-tools"><span id="p5-note" class="p5-note"></span><button id="p5-export" type="button" title="匯出目前篩選結果（全部頁）">匯出 CSV</button></span></div>
     <div class="p5-grid" id="p5-grid">
       <aside id="p5-filters"></aside>
       <div class="grid-splitter-v p5-main-splitter" id="p5-main-split"></div>
@@ -25,16 +32,7 @@ export function mount(container) {
   const gridEl = container.querySelector('#p5-grid');
   const noteEl = container.querySelector('#p5-note');
   const dateEl = container.querySelector('#p5-data-date');
-  const readVar = (name, fallback) => {
-    const value = parseFloat(getComputedStyle(gridEl).getPropertyValue(name));
-    return Number.isFinite(value) ? value : fallback;
-  };
-  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p5-main-split'), {
-    getValue: () => readVar('--p5-left-w', 320),
-    setValue: (px) => gridEl.style.setProperty('--p5-left-w', `${px}px`),
-    min: 260,
-    max: 620
-  });
+  const stopMainSplit = bindCssVarSplitter(container.querySelector('#p5-main-split'), gridEl, '--p5-left-w', { fallback: 320, min: 260, max: 620 });
 
   // 只放行有效代碼，其餘告訴使用者被略過幾檔。
   const keepValidCodes = (codes) => {
@@ -64,8 +62,9 @@ export function mount(container) {
   });
 
   const rows = () => store.get('twseDaily')?.rows || [];
+  let filtered = [];
   const runFilters = ({ enabled, settings }) => {
-    const filtered = applyFilters(rows(), enabled, settings);
+    filtered = applyFilters(rows(), enabled, settings);
     results.update(filtered);
     filter.showMessage(rows().length ? `符合 ${filtered.length} / ${rows().length} 檔` : '');
   };
@@ -73,6 +72,17 @@ export function mount(container) {
   const filter = new FilterPanel(container.querySelector('#p5-filters'), {
     onRun: runFilters,
     onLoadWatchlist: openWatchlistFile
+  });
+
+  const exportButton = container.querySelector('#p5-export');
+  exportButton.addEventListener('click', () => {
+    if (!filtered.length) {
+      filter.showMessage('沒有篩選結果可以匯出');
+      return;
+    }
+    const date = store.get('twseDaily')?.date || new Date().toISOString().slice(0, 10);
+    const table = [CSV_COLUMNS.map(([, label]) => label), ...filtered.map((row) => CSV_COLUMNS.map(([key]) => row[key]))];
+    downloadCsv(`screener-${date}.csv`, toCsv(table));
   });
 
   const render = () => {

@@ -5,11 +5,11 @@ import { WatchlistSidebar } from '../../components/WatchlistSidebar.js';
 import { AlertTable } from '../../components/AlertTable.js';
 import { PatternTogglePanel } from '../../components/PatternTogglePanel.js';
 import { MiniDetailChart } from '../../components/MiniDetailChart.js';
-import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { bindCssVarSplitter } from '../../services/splitter.js';
 import { isTwSpotSession } from '../../services/marketCalendar.js';
 import { orDash, quoteByCode } from '../../services/quoteUtils.js';
 
-// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
+// mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
     <div class="page-topbar"><h2>PAGE 3｜自選列表 + 型態提醒</h2></div>
@@ -25,16 +25,7 @@ export function mount(container) {
   `;
 
   const gridEl = container.querySelector('.p3-grid9');
-  const readVar = (name, fallback) => {
-    const value = parseFloat(getComputedStyle(gridEl).getPropertyValue(name));
-    return Number.isFinite(value) ? value : fallback;
-  };
-  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p3-main-split'), {
-    getValue: () => readVar('--p3-left-w', 420),
-    setValue: (px) => gridEl.style.setProperty('--p3-left-w', `${px}px`),
-    min: 280,
-    max: 700
-  });
+  const stopMainSplit = bindCssVarSplitter(container.querySelector('#p3-main-split'), gridEl, '--p3-left-w', { fallback: 420, min: 280, max: 700 });
 
   const side = new WatchlistSidebar(container.querySelector('#p3-left'));
   const table = new AlertTable(container.querySelector('#p3-alert'), { onSelect: (code) => store.set('selectedStock', code) });
@@ -96,6 +87,7 @@ export function mount(container) {
   };
   const unsubs = [
     store.subscribe('watchlist', (d) => side.update(d)),
+    store.subscribe('watchGroups', () => side.update()),
     store.subscribe('patternAlerts', (d) => {
       table.update(d);
       renderDetail();

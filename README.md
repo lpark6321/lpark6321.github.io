@@ -8,7 +8,7 @@
 
 | 檔案 | 說明 |
 |------|------|
-| `index_hide.html` | **主儀表板**。7 個分頁，用 hash 切換（`#page1` ~ `#page7`），右上角可切換全站資料來源 |
+| `index_hide.html` | **主儀表板**。7 個分頁，用 hash 切換（`#page1` ~ `#page7`），右上角可切換全站資料來源。外殼程式在 `app.js` |
 | `index.html` | Market Data Lab：測試 Yahoo / FinMind / 期交所逐筆等資料提供者的實驗頁（`main.js`） |
 
 主儀表板分頁：
@@ -17,10 +17,10 @@
 |------|------|
 | Page 1 Futures Overview | 台指期總覽（需要期貨來源，Yahoo 模式整塊灰掉）、多空關卡（樞紐點／振幅倍數／固定點數可切換）、30 日振幅與 20 日均線月成本（日 K）、K 線主圖（`services/marketChart.js`）、TradingView 小工具 |
 | Page 2 Market Temperature | 市場溫度：權值股、電子／金融／傳產分類統計、儀表與圓餅圖。拿不到資料的區塊各自灰掉 |
-| Page 3 Watchlist Alerts | 自選股（含即時報價，存在瀏覽器，可匯出／匯入 JSON）與型態提醒：自選股日 K + 即時價計算 6 種技術型態，可開桌面通知 |
-| Page 4 Options Strategy | 選擇權策略組合（腳位清單、匯出匯入、自動存在瀏覽器）、到期損益圖（元）、Black-Scholes Greeks、選擇權鏈（**示範資料**，等期交所盤後資料接上） |
-| Page 5 Stock Screener | 上市股票條件選股：證交所盤後的本益比、殖利率、股價淨值比、成交量、漲跌幅（`services/filterEngine.js`） |
-| Page 6 Market Map | 台股市場地圖：方塊圖與旭日圖，顏色可選今日漲跌或量比，可搜尋代碼；沒有報價的方塊畫斜線 |
+| Page 3 Watchlist Alerts | 自選股（含即時報價，存在瀏覽器，可匯出／匯入 JSON；群組可新增、改名、刪除，股票可拖曳換群組）與型態提醒：自選股日 K + 即時價計算 6 種技術型態，可開桌面通知；當天的提醒存在瀏覽器，重新整理不會重複或消失，隔天清掉 |
+| Page 4 Options Strategy | 選擇權策略組合（腳位清單、匯出匯入、自動存在瀏覽器）、到期損益圖（元）、Black-Scholes Greeks、選擇權鏈（**示範資料**；期交所 TXO 盤後行情的解析與到期日判斷已寫在 `services/taifexOptions.js`，還沒接上抓取） |
+| Page 5 Stock Screener | 上市股票條件選股：證交所盤後的本益比、殖利率、股價淨值比、成交量、漲跌幅（`services/filterEngine.js`），結果可匯出 CSV |
+| Page 6 Market Map | 台股市場地圖：方塊圖與旭日圖，顏色可選今日漲跌或量比，可搜尋代碼；沒有報價的方塊畫斜線；控制列標示各權重名單的資料日期 |
 | Page 7 Global Indices | 亞股、美股、外匯、加密貨幣與世界時鐘（卡片大小固定，只更新數字） |
 
 ## 本機執行
@@ -78,13 +78,20 @@ Yahoo 代理（`bridges/yahooProxyServer.js`）提供：
 
 可用環境變數 `YAHOO_PROXY_PORT`（預設 8787）與 `YAHOO_PROXY_CACHE_MS`（預設 4000）調整。快取時間比預設 5 秒的輪詢短，所以每次輪詢都會拿到新資料，快取只用來合併同時送出的相同請求。
 
+## 右上角
+
+- **台股狀態**：盤前／盤中／收盤／休市（附原因，例如「週六」或假日名稱），以及距開盤或收盤的倒數。
+- **連線提示**：Yahoo 代理（8787）、券商橋接或證交所連不上時直接寫出是哪一個；在 GitHub Pages 線上版連不上代理時，提示要在本機執行 `GIO.cmd`。設定檔的休市表沒有今年時，提示要重算設定檔。
+- **設定備份／設定還原**：把自選股與群組、策略腳位、選股條件、型態開關、多空關卡、資料來源、更新頻率一次存成一個 JSON 檔；還原後重新載入頁面生效。所有瀏覽器設定集中在 `data/storage.js`（鍵名 `gio.<名稱>`）。FinMind token 不在備份內。
+- **快捷鍵**：`1`～`7` 切換分頁、`R` 手動更新（在輸入框裡打字時不作用）。
+
 ## 資料來源切換
 
-主儀表板右上角有兩個下拉選單，都套用到所有分頁，選擇會存在 `localStorage`：
+主儀表板右上角有兩個下拉選單，都套用到所有分頁，選擇會存在瀏覽器：
 
-- **資料來源**（`dashboard.dataSource`）：見下表。
-- **更新頻率**（`dashboard.pollSeconds`）：5／10／30／60 秒，預設 5 秒，Data Lab（`index.html`）也共用這個設定。台股報價只在週一到週五 09:00–13:35（台北時間）依頻率輪詢；非交易時段只在開頁、切換來源或按「手動更新」時抓一次。全球指數（Page 7）不受交易時段限制。
-- **休市日**：交易時段判斷會排除證交所公布的休市日（`data/twMarketHolidays.js`，目前只有 2026 年）。證交所每年底公布隔年休市表，公布後要把新年度的日期補進去，否則那一年的假日會被當成交易日。
+- **資料來源**：見下表。
+- **更新頻率**：5／10／30／60 秒，預設 5 秒，Data Lab（`index.html`）也共用這個設定。台股報價只在週一到週五 09:00–13:35（台北時間）依頻率輪詢；非交易時段只在開頁、切換來源或按「手動更新」時抓一次。全球指數（Page 7）不受交易時段限制。
+- **休市日、加權權重、台灣50／中型100 成分股、量能權重**：都在設定檔 `data/config/marketConfig.json`，主程式只讀它。要更新時把新的原始檔放進 `data/config/source/`，執行 `node tools/rebuild-config.mjs`（加 `--download` 會自動下載能下載的部分）。每個原始檔去哪裡找、檔名格式，寫在 [`data/config/README.md`](data/config/README.md)。
 
 | 選項 | 來源 |
 |------|------|
@@ -112,18 +119,22 @@ services/feedClock.js（全站唯一的計時器，依「更新頻率」打節�
 - 預估量在資料寫進 store 的那一刻就算好（`dashboardDataSource.js` 的 `withVolumeEstimate`），頁面只讀 `volEstimate`。
 - 各來源能做什麼（會不會定時抓、有沒有個股報價、橋接位址、是不是期貨 K 線）集中寫在 `dashboardDataSource.js` 的來源清單；台股交易時段集中在 `marketCalendar.js` 的 `TW_SESSIONS`；台指商品與每點價值在 `data/twDerivatives.js`。
 - **盤後資料不受「資料來源」限制**：證交所盤後表（Page5、全上市股名）與型態提醒用的自選股日 K（Yahoo）屬於歷史資料，任何來源下都會抓，一天在收盤後（14:30、18:00）更新，失敗一分鐘後重試。型態判斷的「今天這一根」用目前來源的即時價，沒有就只用日 K（模擬資料的價格不拿來判斷）。
-- 數字格式（「--」、千分位、百分比）與「依代碼找報價」統一在 `services/quoteUtils.js`。
+- 數字格式（「--」、千分位、百分比）、加權平均與「依代碼找報價」統一在 `services/quoteUtils.js`；報價表只在 store 的報價變了才重建。
+- 各頁時鐘、倒數與標頭狀態共用 `feedClock.js` 的 `subscribeSecond`（全站一個每秒計時器）。
 
 ## 目錄結構
 
 ```
-index_hide.html      主儀表板外殼：分頁路由、資料來源選單、啟動 marketFeed
+index_hide.html      主儀表板外殼（HTML）；程式在 app.js：分頁路由、資料來源選單、狀態列、快捷鍵、啟動 marketFeed
 pages/pageN/         各分頁，每頁匯出 mount(container)，回傳清理函式（繪圖另放 pageNDraw.js，Page 1 的 K 線計算在 page1Series.js）
 components/          可重用的 UI 元件（圖表、表格、面板…）
 services/            瀏覽器端：取資料排程（feedClock.js、marketFeed.js）、各資料來源、Yahoo 共用請求（yahooApi.js）、CSV 解析、圖表、篩選／型態引擎
 bridges/             本機服務（Node / PowerShell）：Yahoo 代理、券商 DDE 橋接，由 GIO.cmd 啟動
 providers/           Data Lab 使用的資料提供者（Yahoo、FinMind、期交所、券商）
-data/                全域 store（訂閱式狀態）與台股清單、成分股權重
+data/                全域 store（訂閱式狀態）、瀏覽器設定（storage.js）、台股清單；成分股權重與休市日讀 data/config/marketConfig.json
+data/config/         市場設定檔與它的原始檔（source/），說明見 data/config/README.md
+tools/               設定檔重算工具（rebuild-config.mjs）
+tests/               測試：node tests/run.mjs（靜態檢查 + 單元測試，不需要瀏覽器）
 style/               共用樣式（variables / layout / components）
 style.css, main.js   Data Lab（index.html）專用
 ```
@@ -131,7 +142,7 @@ style.css, main.js   Data Lab（index.html）專用
 ### 新增一個分頁
 
 1. 建立 `pages/page8/page8.js`，匯出 `mount(container)`，回傳清理函式（清掉計時器、訂閱與事件監聽）。
-2. 在 `index_hide.html` 的 `pageModules` 加入 `page8`，在 `.tabbar` 加上按鈕，並引入對應的 CSS。
+2. 在 `app.js` 的 `pageModules` 加入 `page8`，在 `index_hide.html` 的 `.tabbar` 加上按鈕，並引入對應的 CSS。
 
 各頁透過 `data/store.js` 取得資料、訂閱更新，不直接呼叫資料來源；需要新資料就在 `services/marketFeed.js` 加一項，寫進 store 的新鍵。外部資料或使用者輸入要放進 `innerHTML` 前，先經過 `services/html.js` 的 `esc()`。
 
@@ -142,10 +153,11 @@ style.css, main.js   Data Lab（index.html）專用
 ## 當前架構
 
 ```
-瀏覽器：index_hide.html（外殼：分頁切換、右上角兩個下拉選單）
+瀏覽器：index_hide.html + app.js（外殼：分頁切換、右上角選單、台股狀態、連線提示、快捷鍵）
 │
 ├─ dashboardDataSource.js   「資料來源」（含各來源能做什麼）、「更新頻率」、成交量預估
-├─ marketCalendar.js        台股交易時段、休市日
+├─ marketCalendar.js        台股交易時段、休市日、台股狀態與倒數
+├─ serviceHealth.js         各服務連不連得上（標頭提示）
 │
 ├─ feedClock.js             全站唯一的計時器，每 N 秒打一次拍
 │   ├─ marketFeed.js        每一拍只向選定的來源要資料，結果寫進 store；切換來源時先清空
@@ -158,6 +170,8 @@ style.css, main.js   Data Lab（index.html）專用
 │   └─ marketChart.js       C 區圖表：自己抓你選的商品 K 線，但也跟著同一個拍子
 │
 ├─ data/store.js            所有行情資料放這裡（一開始是空的）；資料一更新就通知訂閱的頁面
+├─ data/storage.js          瀏覽器設定的唯一讀寫點、設定備份／還原
+├─ data/marketConfig.js     讀 data/config/marketConfig.json（休市日、權重、量能權重）
 │
 └─ pages/pageN/             只有目前這一頁是掛載的：訂閱 store → 重畫
                             切走就卸載、取消訂閱，看不到的頁面不會重畫

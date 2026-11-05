@@ -1,4 +1,5 @@
 // 旭日圖元件：依群組與成分權重繪製內外圈市場結構。
+import { setupHiDpiCanvas } from '../services/canvas.js';
 import { NO_DATA_COLOR, buildGroups, metricColor } from './TreemapLayout.js';
 
 export class SunburstChart {
@@ -63,11 +64,7 @@ export class SunburstChart {
     const H = this.canvas.offsetHeight;
     if (!W || !H) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.floor(W * dpr);
-    this.canvas.height = Math.floor(H * dpr);
-    const ctx = this.canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ctx = setupHiDpiCanvas(this.canvas, W, H);
     ctx.clearRect(0, 0, W, H);
 
     const sectors = this._buildSectors();

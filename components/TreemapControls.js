@@ -27,7 +27,7 @@ export class TreemapControls {
         <span class="tm-ctrl-label">搜尋</span>
         <input class="tm-search" type="search" placeholder="代碼或名稱" aria-label="搜尋代碼或名稱">
       </div>
-      <div class="tm-ctrl-group tm-ctrl-group--chart" style="margin-left:auto">
+      <div class="tm-ctrl-group tm-ctrl-group--chart">
         <span class="tm-ctrl-label">圖形</span>
         <button class="tm-btn active" data-chart="treemap">方塊圖</button>
         <button class="tm-btn" data-chart="sunburst">旭日圖</button>

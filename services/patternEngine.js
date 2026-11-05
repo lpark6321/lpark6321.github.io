@@ -1,6 +1,7 @@
 // 型態提醒：自選股日 K（Yahoo，屬盤後歷史資料，不受資料來源限制，每天抓一次）加上目前來源的即時價當「今天這一根」，
 // 算技術指標後檢查使用者勾選的型態。沒有即時價時只用日 K 判斷。同一檔、同一型態一天只提醒一次。
 import { store } from '../data/store.js';
+import { loadSetting, saveSetting } from '../data/storage.js';
 import { bollinger, kd, macd, rsi, sma } from './indicators.js';
 import { isDailyRefreshDue, isTwQuoteSession } from './marketCalendar.js';
 import { dateKeyFromUnix, fetchYahooCandles } from './marketSources.js';
@@ -60,7 +61,6 @@ export const PATTERN_REGISTRY = [
 const MIN_BARS = 40;
 const FETCH_CONCURRENCY = 4;
 const MAX_ALERTS = 200;
-const NOTIFY_KEY = 'tw_pattern_notify';
 
 const dailyByCode = new Map();
 const firedToday = new Set();
@@ -68,6 +68,21 @@ let historyBusy = false;
 
 const taipeiToday = () => dateKeyFromUnix(Math.floor(Date.now() / 1000));
 const watchCodes = () => [...new Set(store.get('watchlist').map((row) => row.code))];
+const firedKey = (date, code, patternId) => `${date}|${code}|${patternId}`;
+
+// 當天的提醒存在瀏覽器：重新整理後原樣還原、已觸發的不再重複；隔天開啟（或跨日）就清掉。
+let alertsDate = taipeiToday();
+{
+  const saved = loadSetting('patternAlerts');
+  const alerts = saved?.date === alertsDate && Array.isArray(saved.alerts) ? saved.alerts.filter((row) => row?.code && row.patternId) : [];
+  alerts.forEach((row) => firedToday.add(firedKey(alertsDate, row.code, row.patternId)));
+  if (alerts.length) store.set('patternAlerts', alerts);
+}
+
+function saveAlerts(alerts) {
+  store.set('patternAlerts', alerts);
+  saveSetting('patternAlerts', { date: alertsDate, alerts });
+}
 
 // 上市代碼抓 .TW，抓不到再試上櫃 .TWO。
 async function fetchDaily(code) {
@@ -163,11 +178,8 @@ function snapshotOf(series) {
 }
 
 export function isPatternNotifyEnabled() {
-  try {
-    return globalThis.localStorage?.getItem(NOTIFY_KEY) === '1' && globalThis.Notification?.permission === 'granted';
-  } catch {
-    return false;
-  }
+  // 舊版存的是 '1'／'0'（讀回來是數字 1／0）。
+  return Boolean(loadSetting('patternNotify', false)) && globalThis.Notification?.permission === 'granted';
 }
 
 // 開啟時第一次會跳出瀏覽器的通知授權；回傳最後是否開啟。
@@ -176,11 +188,7 @@ export async function setPatternNotify(enabled) {
   if (on && globalThis.Notification && Notification.permission !== 'granted') {
     on = (await Notification.requestPermission()) === 'granted';
   }
-  try {
-    globalThis.localStorage?.setItem(NOTIFY_KEY, on ? '1' : '0');
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+  saveSetting('patternNotify', on);
   return on && Boolean(globalThis.Notification);
 }
 
@@ -200,6 +208,11 @@ export function evaluatePatterns() {
   if (!enabled.size) return;
   const quotes = liveQuoteMap();
   const today = taipeiToday();
+  if (today !== alertsDate) {
+    alertsDate = today;
+    firedToday.clear();
+    saveAlerts([]);
+  }
   const now = new Date();
   const fresh = [];
   watchCodes().forEach((code) => {
@@ -210,7 +223,7 @@ export function evaluatePatterns() {
     const snap = snapshotOf(withLiveBar(candles, quote?.source === 'mock' ? null : quote));
     if (!snap) return;
     PATTERN_REGISTRY.forEach((pattern) => {
-      const key = `${today}|${code}|${pattern.id}`;
+      const key = firedKey(today, code, pattern.id);
       if (!enabled.has(pattern.id) || firedToday.has(key) || !pattern.condition(snap)) return;
       firedToday.add(key);
       fresh.push({
@@ -228,6 +241,6 @@ export function evaluatePatterns() {
     });
   });
   if (!fresh.length) return;
-  store.set('patternAlerts', [...fresh, ...store.get('patternAlerts')].slice(0, MAX_ALERTS));
+  saveAlerts([...fresh, ...store.get('patternAlerts')].slice(0, MAX_ALERTS));
   notify(fresh);
 }

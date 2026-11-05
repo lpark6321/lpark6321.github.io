@@ -1,3 +1,4 @@
+import { setupHiDpiCanvas } from '../../services/canvas.js';
 // Page2 的 canvas 繪圖：長條圖、類股 K 棒、成分股圓餅。只畫圖，不讀 store。
 
 function clamp(value, min, max) {
@@ -147,14 +148,10 @@ function hatchPattern(ctx, color) {
 
 // drawSectorPie：依 segments（value + color，hatch 表示畫斜線）畫圓餅圖，處理高 DPI。
 export function drawSectorPie(canvas, segments, size) {
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
   const clientW = Math.floor(canvas.clientWidth || size);
   const clientH = Math.floor(canvas.clientHeight || size);
   const box = Math.max(72, Math.min(size, Math.min(clientW, clientH)));
-  canvas.width = Math.floor(box * dpr);
-  canvas.height = Math.floor(box * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const ctx = setupHiDpiCanvas(canvas, box, box);
   ctx.clearRect(0, 0, box, box);
 
   const cx = box / 2;

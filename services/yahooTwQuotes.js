@@ -1,7 +1,7 @@
 // Yahoo 台股報價：一次抓加權指數、十大權值股、市場地圖成分股與自選股，寫進 store。何時抓由 marketFeed 決定。
 import { store } from '../data/store.js';
 import { MARKET_UNIVERSE, UNIVERSE_BY_CODE } from '../data/marketUniverse.js';
-import { getDashboardDataSource, loadVolumeWeights, withVolumeEstimate } from './dashboardDataSource.js';
+import { getDashboardDataSource, withVolumeEstimate } from './dashboardDataSource.js';
 import { isTwQuoteSession } from './marketCalendar.js';
 import { TOP10_CODES } from './quoteUtils.js';
 import { fetchYahooQuotes, mapYahooQuoteFields, yahooNumber } from './yahooApi.js';
@@ -107,7 +107,6 @@ export async function updateYahooTwQuotes({ force = false } = {}) {
     const extraCodes = extraWatchCodes();
     const symbols = [...BASE_SYMBOLS, ...extraCodes.flatMap((code) => [`${code}.TW`, `${code}.TWO`])];
     const rawMap = await fetchYahooQuotes(symbols);
-    await loadVolumeWeights();
     // 請求期間使用者可能已切換資料來源；不能讓晚到的 Yahoo 資料蓋掉新來源。
     if (getDashboardDataSource() !== 'yahoo') return false;
     updateTopStocksFromQuotes(rawMap);

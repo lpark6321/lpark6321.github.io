@@ -1,21 +1,17 @@
 // 全域資料 store：保存行情、篩選、自選股等狀態並提供訂閱更新。
 import { TAIEX_TOP10 } from './taiexWeightedConstituents.js';
 import { DEFAULT_FUTURES_CONTRACT, FUTURES_CONTRACTS } from './twDerivatives.js';
+import { loadSetting, saveSetting } from './storage.js';
 const listeners = new Map();
 
-const WATCHLIST_KEY = 'tw_watchlist';
-const LEGS_KEY = 'tw_strategy_legs';
-const PATTERNS_KEY = 'tw_patterns_enabled';
+// 存在瀏覽器的 store 鍵（data/storage.js 的設定名稱與 store 鍵同名）。
+const PERSISTED_KEYS = new Set(['watchlist', 'watchGroups', 'strategyLegs', 'enabledPatterns']);
 const DEFAULT_PATTERNS = ['ma20_breakout', 'kd_golden_cross', 'vol_surge', 'macd_golden_cross'];
 
 // 勾選的型態：存過就用存的（包含全部取消勾選的空陣列），沒存過用預設。
 function loadPatterns() {
-  try {
-    const stored = JSON.parse(globalThis.localStorage?.getItem(PATTERNS_KEY) || 'null');
-    return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : DEFAULT_PATTERNS;
-  } catch {
-    return DEFAULT_PATTERNS;
-  }
+  const stored = loadSetting('enabledPatterns');
+  return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : DEFAULT_PATTERNS;
 }
 const STOCK_CODE_RE = /^[0-9A-Z]{4,6}$/;
 const DEFAULT_WATCHLIST = [
@@ -31,7 +27,7 @@ export function isValidStockCode(code) {
   return STOCK_CODE_RE.test(String(code ?? '').trim().toUpperCase());
 }
 
-// 自選股來自使用者輸入、匯入檔與 localStorage，一律在這裡驗證：代碼格式不符的列丟掉，同群組重複的代碼只留一筆。
+// 自選股來自使用者輸入、匯入檔與瀏覽器儲存，一律在這裡驗證：代碼格式不符的列丟掉，同群組重複的代碼只留一筆。
 export function sanitizeWatchlist(rows) {
   if (!Array.isArray(rows)) return [];
   const seen = new Set();
@@ -48,16 +44,7 @@ export function sanitizeWatchlist(rows) {
   return result;
 }
 
-function loadWatchlist() {
-  try {
-    const stored = sanitizeWatchlist(JSON.parse(globalThis.localStorage?.getItem(WATCHLIST_KEY) || 'null'));
-    return stored.length ? stored : DEFAULT_WATCHLIST;
-  } catch {
-    return DEFAULT_WATCHLIST;
-  }
-}
-
-// 選擇權策略腳位：來自 localStorage 與匯入檔，逐欄驗證，不合格的腳位丟掉。
+// 選擇權策略腳位：來自瀏覽器儲存與匯入檔，逐欄驗證，不合格的腳位丟掉。
 export function sanitizeLegs(rows) {
   if (!Array.isArray(rows)) return [];
   const contracts = new Set(FUTURES_CONTRACTS.map((item) => item.value));
@@ -77,29 +64,24 @@ export function sanitizeLegs(rows) {
     }));
 }
 
-function loadJson(key, sanitize, fallback) {
-  try {
-    const stored = sanitize(JSON.parse(globalThis.localStorage?.getItem(key) || 'null'));
-    return stored.length ? stored : fallback;
-  } catch {
-    return fallback;
-  }
+// 存過且驗證後還有資料就用存的，否則用預設。
+// 自選股群組（含還沒放股票的空群組）。page1分組 是 Page1 6 區與盤中走勢用的固定群組，不能改名或刪除。
+export const PAGE1_GROUP = 'page1分組';
+const DEFAULT_GROUPS = [PAGE1_GROUP, '自選1', '自選2', '自選3'];
+
+export function sanitizeGroups(rows) {
+  if (!Array.isArray(rows)) return [];
+  return [...new Set(rows.map((name) => String(name ?? '').trim().slice(0, 40)).filter(Boolean))];
 }
 
-function saveJson(key, rows) {
-  try {
-    globalThis.localStorage?.setItem(key, JSON.stringify(rows));
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+// 群組順序：page1分組 → 存的群組 → 自選股裡有、但群組清單沒有的（例如匯入檔帶來的）。
+export function watchGroupNames(groups = state.watchGroups, watchlist = state.watchlist) {
+  return [...new Set([PAGE1_GROUP, ...groups, ...watchlist.map((row) => row.group)])];
 }
 
-function saveWatchlist(rows) {
-  try {
-    globalThis.localStorage?.setItem(WATCHLIST_KEY, JSON.stringify(rows));
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+function loadRows(name, sanitize, fallback) {
+  const stored = sanitize(loadSetting(name));
+  return stored.length ? stored : fallback;
 }
 
 // 台指選擇權月選在每月第三個星期三到期；回傳下個月那一天 'YYYY-MM-DD'。
@@ -129,7 +111,8 @@ const state = {
   productDaily: null,
   twseDaily: null,
   topStocks: TAIEX_TOP10.map(({ code, name, weightPct }) => ({ code, name, weightPct })),
-  watchlist: loadWatchlist(),
+  watchlist: loadRows('watchlist', sanitizeWatchlist, DEFAULT_WATCHLIST),
+  watchGroups: loadRows('watchGroups', sanitizeGroups, DEFAULT_GROUPS),
   selectedStock: '2330',
   enabledPatterns: loadPatterns(),
   // 型態警示由 services/patternEngine.js 依自選股日 K 與即時價計算。
@@ -142,7 +125,7 @@ const state = {
     calls: Array.from({ length: 9 }, (_, i) => ({ strike: 19400 + i * 100, bid: Math.max(20, 220 - i * 20), ask: Math.max(25, 225 - i * 20) })),
     puts: Array.from({ length: 9 }, (_, i) => ({ strike: 19400 + i * 100, bid: Math.max(20, 60 + i * 18), ask: Math.max(25, 65 + i * 18) }))
   },
-  strategyLegs: loadJson(LEGS_KEY, sanitizeLegs, [{ type: 'call', action: 'buy', strike: 19800, qty: 1, premium: 125 }]),
+  strategyLegs: loadRows('strategyLegs', sanitizeLegs, [{ type: 'call', action: 'buy', strike: 19800, qty: 1, premium: 125 }]),
   marketMap: [],
   globalIndices: [
     { id: 'kospi', name: '韓綜', fullName: 'KOSPI', flag: '🇰🇷' },
@@ -188,15 +171,10 @@ const initialState = clone(state);
 
 export const store = {
   set(key, value) {
-    if (key === 'watchlist') {
-      value = sanitizeWatchlist(value);
-      saveWatchlist(value);
-    }
-    if (key === 'strategyLegs') {
-      value = sanitizeLegs(value);
-      saveJson(LEGS_KEY, value);
-    }
-    if (key === 'enabledPatterns') saveJson(PATTERNS_KEY, value);
+    if (key === 'watchlist') value = sanitizeWatchlist(value);
+    if (key === 'watchGroups') value = sanitizeGroups(value);
+    if (key === 'strategyLegs') value = sanitizeLegs(value);
+    if (PERSISTED_KEYS.has(key)) saveSetting(key, value);
     state[key] = value;
     emit(key);
   },

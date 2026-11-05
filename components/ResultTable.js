@@ -33,7 +33,7 @@ export class ResultTable {
       <div class="panel__header"><span class="panel__badge">R</span><h3 class="panel__title">篩選結果（欄位可拖曳）</h3></div>
       <div class="panel__body">
         <div class="table-wrap"><table><thead><tr></tr></thead><tbody></tbody></table></div>
-        <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <div class="result-table__pager">
           <button class="prev">上一頁</button><span class="page"></span><button class="next">下一頁</button>
         </div>
       </div>
@@ -61,7 +61,6 @@ export class ResultTable {
       const col = this.getCol(key);
 
       if (col.sortable) {
-        th.style.cursor = 'pointer';
         th.addEventListener('click', () => {
           this.asc = this.sortKey === key ? !this.asc : true;
           this.sortKey = key;

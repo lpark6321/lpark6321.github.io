@@ -1,27 +1,21 @@
 // 小型明細圖元件（Page3 個股細節）：當日走勢線，型態觸發點以藍色直線標出（markers 的 index 對應 series）。
+import { setupHiDpiCanvas } from '../services/canvas.js';
+
 export class MiniDetailChart {
   constructor(container) {
     this.root = document.createElement('section');
     this.root.className = 'panel';
     this.root.innerHTML = '<div class="panel__header"><span class="panel__badge">M</span><h3 class="panel__title">個股細節</h3></div><div class="panel__body"><div class="ohlc"></div><canvas></canvas></div>';
     this.canvas = this.root.querySelector('canvas');
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '220px';
-    this.ctx = this.canvas.getContext('2d');
+    this.canvas.className = 'mini-detail__canvas';
     this.ohlc = this.root.querySelector('.ohlc');
     container.appendChild(this.root);
   }
 
   ensureCanvasSize() {
-    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
-    const dpr = window.devicePixelRatio || 1;
     this.width = Math.max(220, Math.floor(this.canvas.clientWidth || 460));
     this.height = 220;
-    const backingW = Math.round(this.width * dpr);
-    const backingH = Math.round(this.height * dpr);
-    if (this.canvas.width !== backingW) this.canvas.width = backingW;
-    if (this.canvas.height !== backingH) this.canvas.height = backingH;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx = setupHiDpiCanvas(this.canvas, this.width, this.height);
   }
 
   update({ code, ohlc, series = [], markers = [] }) {

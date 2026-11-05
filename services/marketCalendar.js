@@ -91,6 +91,37 @@ export function isTwQuoteSession(time = Date.now()) {
   return isTaipeiSession(TW_SESSIONS.spot.open, '13:35', time);
 }
 
+// ---- 台股現貨狀態（標頭顯示）：盤前／盤中／收盤／休市（附原因）與下一個開收盤時間 ----
+const WEEKDAY_ZH = '日一二三四五六';
+const taipeiMinuteAt = (day, minute) => Date.parse(`${day}T00:00:00+08:00`) + minute * 60000;
+const nextDay = (day) => new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+
+// 不開市的原因（週末或休市日名稱）；交易日回傳空字串。
+function twClosedReason(day) {
+  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+  if (weekday === 0 || weekday === 6) return `週${WEEKDAY_ZH[weekday]}`;
+  return TW_MARKET_HOLIDAYS.get(day) ?? '';
+}
+
+// 回傳 { state: 'pre'|'open'|'closed'|'holiday', label, reason, next: { type: 'open'|'close', at(ms) } }。
+export function getTwMarketStatus(time = Date.now()) {
+  const { day } = taipeiDayAndMinute(time);
+  const openAt = taipeiMinuteAt(day, minutesOf(TW_SESSIONS.spot.open));
+  const closeAt = taipeiMinuteAt(day, minutesOf(TW_SESSIONS.spot.close));
+  const reason = twClosedReason(day);
+  if (!reason && time < openAt) return { state: 'pre', label: '盤前', reason, next: { type: 'open', at: openAt } };
+  if (!reason && time < closeAt) return { state: 'open', label: '盤中', reason, next: { type: 'close', at: closeAt } };
+  let next = nextDay(day);
+  // 最長的連假（春節）也不到兩週；休市表沒有的年份只跳過週末。
+  for (let i = 0; i < 30 && twClosedReason(next); i += 1) next = nextDay(next);
+  return {
+    state: reason ? 'holiday' : 'closed',
+    label: reason ? '休市' : '收盤',
+    reason,
+    next: { type: 'open', at: taipeiMinuteAt(next, minutesOf(TW_SESSIONS.spot.open)) }
+  };
+}
+
 // 盤後資料（日 K、證交所盤後表）的重抓時機：從沒抓過、跨日，或今天已過收盤後的更新點（14:30、18:00）但上次是在那之前抓的。
 const AFTER_CLOSE_REFRESH_MINUTES = [14 * 60 + 30, 18 * 60];
 

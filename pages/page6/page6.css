@@ -203,3 +203,5 @@
   border: 1px solid var(--border2, #263050);
   border-radius: 3px;
 }
+
+.p6-data-date { order: 2; color: var(--text2); font-size: 12px; white-space: nowrap; }

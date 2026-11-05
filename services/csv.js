@@ -1,4 +1,4 @@
-// CSV 解析（期交所逐筆檔、K 線 CSV）：Data Lab 的 providers 與圖表的資料來源共用。
+// CSV 解析（期交所逐筆檔、K 線 CSV）與產生（Page5 匯出）：Data Lab 的 providers 與圖表的資料來源共用。
 
 // 支援雙引號欄位（含逗號與 "" 跳脫）；shortcut: 不支援引號內換行，逐筆檔沒有這種欄位。
 export function splitCsvLine(line) {
@@ -38,4 +38,13 @@ export function parseCsv(text) {
     const values = splitCsvLine(line);
     return Object.fromEntries(headers.map((header, index) => [header, values[index]]));
   });
+}
+
+// 二維陣列 → CSV 文字（CRLF 換行）。含逗號、雙引號或換行的欄位加引號，null/undefined 輸出空欄位。
+export function toCsv(rows) {
+  const cell = (value) => {
+    const text = value == null ? '' : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  return rows.map((row) => row.map(cell).join(',')).join('\r\n');
 }

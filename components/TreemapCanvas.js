@@ -1,5 +1,6 @@
 // 方塊圖 Canvas 元件：負責市場地圖繪製、滑鼠命中測試與互動事件。
 // 版面（方塊位置大小）只在開頁、切換分組、點進類股、視窗縮放時重排；報價更新只換顏色與數字。
+import { setupHiDpiCanvas } from '../services/canvas.js';
 import {
   NO_DATA_COLOR,
   SECTOR_HEADER_HEIGHT,
@@ -8,7 +9,7 @@ import {
   getVolumeColor,
   layoutWithGroups,
   metricColor,
-  weightedAverage
+  sectorAverage
 } from './TreemapLayout.js';
 
 const TW50_MAJOR_COLORS = {
@@ -141,17 +142,11 @@ export class TreemapCanvas {
   }
 
   render() {
-    // 每次重繪都根據 devicePixelRatio 重設 backing store，
-    // 確保高 DPI 螢幕上的文字與邊線不會模糊。
-    const dpr = window.devicePixelRatio || 1;
     const W = this.canvas.offsetWidth;
     const H = this.canvas.offsetHeight;
     if (!W || !H) return;
 
-    this.canvas.width = Math.floor(W * dpr);
-    this.canvas.height = Math.floor(H * dpr);
-    const ctx = this.canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const ctx = setupHiDpiCanvas(this.canvas, W, H);
     ctx.clearRect(0, 0, W, H);
 
     if (!this.layout.length) return;
@@ -195,7 +190,7 @@ export class TreemapCanvas {
     ctx.fillText(sector.sectorName, x + 2, y + headerH / 2);
     ctx.restore();
 
-    const avg = weightedAverage(sector.stocks, this.colorMetric);
+    const avg = sectorAverage(sector.stocks, this.colorMetric);
     ctx.font = `700 ${this._clamp(nameFontSize - 1, 7, 9)}px "JetBrains Mono"`;
     ctx.textAlign = 'right';
     ctx.fillStyle = avg == null ? '#8da0bf' : this.colorMetric === 'volRatio' ? '#f5c842' : avg >= 0 ? '#f03a5f' : '#1fd67a';

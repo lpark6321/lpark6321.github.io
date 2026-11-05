@@ -1,7 +1,16 @@
-// JSON 檔匯出／匯入（自選股、選擇權策略共用）。內容驗證由呼叫端負責（例如 sanitizeWatchlist、sanitizeLegs）。
+// 檔案匯出／匯入（自選股、選擇權策略、設定備份、選股結果共用）。內容驗證由呼叫端負責（例如 sanitizeWatchlist、sanitizeLegs）。
 
 export function downloadJson(filename, data) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  downloadText(filename, JSON.stringify(data, null, 2), 'application/json');
+}
+
+// CSV 前面加 BOM，Excel 直接開才不會變亂碼。
+export function downloadCsv(filename, csvText) {
+  downloadText(filename, `\uFEFF${csvText}`, 'text/csv;charset=utf-8');
+}
+
+function downloadText(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;

@@ -24,7 +24,7 @@ export class AlertTable {
       <div class="panel__header">
         <span class="panel__badge">A</span>
         <h3 class="panel__title">型態提醒</h3>
-        <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <div class="alert-table__actions">
           <label title="觸發時跳出瀏覽器通知，切到其他分頁也看得到"><input type="checkbox" class="notify-toggle"> 桌面通知</label>
           <button class="zoom-out" title="縮小">A-</button>
           <button class="zoom-in" title="放大">A+</button>
@@ -85,7 +85,7 @@ export class AlertTable {
     this.seen = new Set(this.data.map(alertKey));
 
     if (!this.data.length) {
-      this.tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2)">尚無觸發。勾選的型態會在自選股上檢查（日 K 加上目前來源的即時價）。</td></tr>';
+      this.tbody.innerHTML = '<tr><td colspan="6" class="alert-table__empty">尚無觸發。勾選的型態會在自選股上檢查（日 K 加上目前來源的即時價）。</td></tr>';
       return;
     }
     this.tbody.innerHTML = this.data.map((r) => `

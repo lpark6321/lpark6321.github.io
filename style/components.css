@@ -168,3 +168,75 @@ button.is-disabled, button:disabled { opacity: .45; cursor: not-allowed; }
   font-weight: 700;
   pointer-events: none;
 }
+
+.gauge__canvas { width: 100%; height: 100%; display: block; }
+.mini-detail__canvas { width: 100%; height: 220px; }
+
+/* 自有圖表圖例（services/marketChart.js）；漲跌、量能警示、SMA 顏色由程式依值決定，留在行內。 */
+.lc-chart-legend__head { display: flex; gap: 8px; align-items: center; white-space: nowrap; flex-wrap: nowrap; }
+.lc-chart-legend__row { margin-top: 4px; color: #dfe7f7; }
+.lc-chart-legend__hl { color: #f5c842; }
+
+/* 市場地圖提示框（TreemapTooltip）：掛在 body 下，不受 .shell 字級規則影響；位置與顯示由程式控制。 */
+.tm-tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  display: none;
+  background: var(--card);
+  border: 1px solid #2a3550;
+  padding: 8px 12px;
+  min-width: 170px;
+  font-family: var(--font-mono);
+}
+.tm-tooltip__title { font-size: 13px; font-weight: 700; color: #e8ecf5; }
+.tm-tooltip__sector { font-size: 9px; color: #4a5a7a; margin-bottom: 6px; }
+.tm-tooltip__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; font-size: 10px; }
+.tm-tooltip__label { color: #4a5a7a; }
+.tm-tooltip__value { color: #e8ecf5; text-align: right; }
+.tm-tooltip__value--vol { color: #00c8d4; }
+
+/* 市場地圖明細（TreemapDetail）、控制列（TreemapControls） */
+.tm-detail__code { font-size: 14px; font-weight: 700; color: #e8ecf5; margin-bottom: 2px; }
+.tm-detail__name { font-size: 12px; color: #4a5a7a; }
+.tm-ctrl-group--chart { margin-left: auto; }
+
+/* 策略組合（StrategyBuilder） */
+.sb-toggle { margin-left: auto; }
+.sb-inputs { display: grid; grid-template-columns: repeat(7, minmax(80px, 1fr)); gap: 6px; }
+.sb-presets { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+.sb-legs { margin-top: 8px; }
+.sb-actions { display: flex; gap: 6px; margin-top: 6px; }
+.sb-msg { color: var(--text2); align-self: center; }
+.sb-summary { padding: 6px 12px; color: var(--text2); }
+.sb-empty { color: var(--text2); }
+.sb-qty { width: 64px; }
+
+/* 策略篩選（FilterPanel）；參數欄數由程式以 --cols 給。 */
+.filter-panel__list { display: grid; gap: 8px; }
+.filter-panel__actions { display: flex; gap: 6px; margin-top: 10px; }
+.filter-panel__msg { margin-top: 6px; color: var(--text2); min-height: 1.2em; }
+.filter-panel__check { display: flex; align-items: center; gap: 6px; }
+.filter-panel__params { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 6px; margin: 4px 0 0 22px; }
+.filter-panel__param { font-size: 12px; color: var(--text2); }
+
+/* 型態開關（PatternTogglePanel） */
+.pattern-panel__toggle { margin-left: auto; }
+.pattern-panel__list { margin-top: 8px; display: grid; gap: 8px; }
+.pattern-panel__item { display: block; border: 1px solid var(--border); padding: 6px; border-radius: 4px; }
+.pattern-panel__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pattern-panel__desc { font-size: 12px; color: var(--text2); }
+
+/* 型態提醒（AlertTable）、篩選結果（ResultTable） */
+.alert-table__actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.alert-table__empty { color: var(--text2); }
+.result-table__pager { display: flex; justify-content: space-between; margin-top: 8px; }
+
+/* 股票卡片（StockCard） */
+.stock-card .name { color: var(--text2); font-size: 12px; }
+.stock-card .price { font-family: var(--font-mono); font-size: 18px; }
+.stock-card .change { margin: 6px 0; }
+
+/* 自選股新增列（WatchlistAddBar） */
+.watchlist-addbar { position: sticky; bottom: 0; }
+.watchlist-addbar__body { display: flex; gap: 8px; align-items: center; justify-content: space-between; }

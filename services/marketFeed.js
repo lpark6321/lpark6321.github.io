@@ -5,7 +5,6 @@ import { store } from '../data/store.js';
 import { TW_FUTURES_BY_LABEL, TW_FUTURES_PRODUCTS } from '../data/twDerivatives.js';
 import {
   getDashboardDataSource,
-  loadVolumeWeights,
   subscribeDashboardDataSource,
   withVolumeEstimate
 } from './dashboardDataSource.js';
@@ -173,7 +172,6 @@ async function refreshBrokerQuotes(source) {
     ask(true, TW_FUTURES_BY_LABEL['台指(全)'].symbol),
     ask(isTwSpotSession(), SPOT_SYMBOL)
   ]);
-  await loadVolumeWeights();
   if (getDashboardDataSource() !== source) return;
   [[day, TW_FUTURES_BY_LABEL['台指']], [full, TW_FUTURES_BY_LABEL['台指(全)']]].forEach(([result, product]) => {
     if (result.value) store.set(product.storeKey, mapBrokerFutures(result.value, store.get(product.storeKey), source, product.symbol));
@@ -243,7 +241,6 @@ export function refreshMarketFeed() {
 export function startMarketFeed() {
   if (started) return;
   started = true;
-  loadVolumeWeights();
   subscribeFeedTick(() => runTick(false));
   subscribeDashboardDataSource(() => {
     resetSourceData();

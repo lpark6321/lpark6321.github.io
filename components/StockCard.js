@@ -7,17 +7,17 @@ const show = (value) => (value != null && Number.isFinite(Number(value)) ? value
 export class StockCard {
   constructor(container, options = {}) {
     this.root = document.createElement('article');
-    this.root.className = 'panel';
+    this.root.className = 'panel stock-card';
     this.root.innerHTML = `
       <div class="panel__body">
         <div class="card-top">
           <div>
             <div class="code"></div>
-            <div class="name" style="color:var(--text2);font-size:12px"></div>
+            <div class="name"></div>
           </div>
-          <div class="price" style="font-family:var(--font-mono);font-size:18px"></div>
+          <div class="price"></div>
         </div>
-        <div class="change" style="margin:6px 0"></div>
+        <div class="change"></div>
         <div class="spark"></div>
       </div>
     `;
@@ -40,7 +40,7 @@ export class StockCard {
     this.priceEl.textContent = show(stock.price);
     this.priceEl.className = `price ${tone}`;
     this.changeEl.textContent = hasQuote ? `${up ? '+' : ''}${stock.changePct}%` : '--';
-    this.changeEl.className = tone;
+    this.changeEl.className = `change ${tone}`;
     this.spark.options.color = up ? 'rgb(240,58,95)' : 'rgb(31,214,122)';
     this.spark.update(stock.sparkline || [], stock.sparklineBaseline ?? null);
   }

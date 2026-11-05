@@ -1,8 +1,8 @@
 // 全站資料設定與資料層共用的換算：資料來源（含各來源能做什麼）、更新頻率、成交量預估。
-const STORAGE_KEY = 'dashboard.dataSource';
-const CHANGE_EVENT = 'dashboard:data-source-change';
+import { MARKET_CONFIG } from '../data/marketConfig.js';
+import { loadSetting, saveSetting } from '../data/storage.js';
 
-const POLL_STORAGE_KEY = 'dashboard.pollSeconds';
+const CHANGE_EVENT = 'dashboard:data-source-change';
 const POLL_CHANGE_EVENT = 'dashboard:poll-interval-change';
 const DEFAULT_POLL_SECONDS = 5;
 
@@ -33,16 +33,8 @@ export function sourceInfo(source = currentSource) {
   return SOURCE_BY_VALUE.get(source) || {};
 }
 
-function readStoredSource() {
-  try {
-    const stored = globalThis.localStorage?.getItem(STORAGE_KEY);
-    return VALID_SOURCES.has(stored) ? stored : 'yahoo';
-  } catch {
-    return 'yahoo';
-  }
-}
-
-let currentSource = readStoredSource();
+const storedSource = loadSetting('dataSource');
+let currentSource = VALID_SOURCES.has(storedSource) ? storedSource : 'yahoo';
 
 export function getDashboardDataSource() {
   return currentSource;
@@ -56,11 +48,7 @@ export function setDashboardDataSource(source) {
   if (!VALID_SOURCES.has(source) || source === currentSource) return currentSource;
 
   currentSource = source;
-  try {
-    globalThis.localStorage?.setItem(STORAGE_KEY, source);
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+  saveSetting('dataSource', source);
 
   globalThis.dispatchEvent?.(new CustomEvent(CHANGE_EVENT, {
     detail: { source: currentSource }
@@ -76,16 +64,8 @@ export function subscribeDashboardDataSource(callback) {
 }
 
 // 全站共用的更新頻率（秒），所有輪詢器都從這裡讀，預設 5 秒。
-function readStoredPollSeconds() {
-  try {
-    const stored = Number(globalThis.localStorage?.getItem(POLL_STORAGE_KEY));
-    return POLL_INTERVAL_OPTIONS.includes(stored) ? stored : DEFAULT_POLL_SECONDS;
-  } catch {
-    return DEFAULT_POLL_SECONDS;
-  }
-}
-
-let pollSeconds = readStoredPollSeconds();
+const storedPollSeconds = Number(loadSetting('pollSeconds'));
+let pollSeconds = POLL_INTERVAL_OPTIONS.includes(storedPollSeconds) ? storedPollSeconds : DEFAULT_POLL_SECONDS;
 
 export function getPollIntervalSeconds() {
   return pollSeconds;
@@ -100,11 +80,7 @@ export function setPollIntervalSeconds(seconds) {
   if (!POLL_INTERVAL_OPTIONS.includes(next) || next === pollSeconds) return pollSeconds;
 
   pollSeconds = next;
-  try {
-    globalThis.localStorage?.setItem(POLL_STORAGE_KEY, String(next));
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+  saveSetting('pollSeconds', next);
 
   globalThis.dispatchEvent?.(new CustomEvent(POLL_CHANGE_EVENT, {
     detail: { ms: getPollIntervalMs() }
@@ -122,45 +98,21 @@ export function subscribePollInterval(callback) {
 
 // ---- 成交量預估：任何來源寫入加權報價時都經過 withVolumeEstimate，頁面只讀 volEstimate ----
 
-const VOLUME_WEIGHT_URL = './volume_weight_5sec.csv';
-let volumeWeights = [];
-let volumeWeightPromise = null;
+// 量能權重表在設定檔（每 5 秒一列 [當日秒數, 倍數, 標準差]），重算方式見 data/config/README.md。
+const volumeWeights = MARKET_CONFIG.volumeWeights.rows;
 
-// 量能預估權重表（每 5 秒一列：時間,加權倍數,標準差）。只載入一次；失敗不快取，下次再試。
-export function loadVolumeWeights() {
-  volumeWeightPromise ||= fetch(VOLUME_WEIGHT_URL, { cache: 'no-store' })
-    .then((response) => {
-      if (!response.ok) throw new Error(`volume weight HTTP ${response.status}`);
-      return response.text();
-    })
-    .then((text) => {
-      volumeWeights = text.trim().split(/\r?\n/).slice(1).map((line) => {
-        const [time, weight, stddev] = line.split(',').map((cell) => String(cell || '').trim());
-        const [hh, mm, ss = 0] = time.split(':').map(Number);
-        return { secondOfDay: hh * 3600 + mm * 60 + ss, weight: Number(weight), stddev: Number(stddev) };
-      }).filter((row) => Number.isFinite(row.secondOfDay) && Number.isFinite(row.weight));
-      return volumeWeights;
-    })
-    .catch((error) => {
-      console.warn('[dashboardDataSource] volume weight load failed:', error);
-      volumeWeightPromise = null;
-      return [];
-    });
-  return volumeWeightPromise;
-}
-
-// 預估全日量 = 目前累計量 × 該時點（台北時間，固定 UTC+8）的權重倍數。權重表還沒載入或量是 0 時回傳 null。
+// 預估全日量 = 目前累計量 × 該時點（台北時間，固定 UTC+8）的權重倍數。量是 0 或不在交易時段時回傳 null。
 function estimateVolume(cumulativeVolume, time = Date.now()) {
   const volume = Number(cumulativeVolume);
   if (!Number.isFinite(volume) || volume <= 0 || !volumeWeights.length) return null;
   const second = Math.floor(time / 1000 + 8 * 3600) % 86400;
-  let selected = null;
-  for (const row of volumeWeights) {
-    if (row.secondOfDay <= second) selected = row;
+  let weight = null;
+  for (const [secondOfDay, rowWeight] of volumeWeights) {
+    if (secondOfDay <= second) weight = rowWeight;
     else break;
   }
-  if (!selected || !(selected.weight > 0)) return null;
-  return { value: volume * selected.weight, weight: selected.weight };
+  if (!(weight > 0)) return null;
+  return { value: volume * weight, weight };
 }
 
 // 拿到即時量就補上預估量欄位；算不出來就是 null（畫面顯示「--」），不留舊值。

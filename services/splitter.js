@@ -48,3 +48,15 @@ export function bindHorizontalSplitter(handle, options = {}) {
     stop();
   };
 }
+
+// 各頁的欄寬都存在版面元素的 CSS 變數（例如 --p1-left-w）：拖曳時讀目前寬度、寫回變數。
+export function bindCssVarSplitter(handle, el, varName, { fallback = 320, ...options } = {}) {
+  return bindHorizontalSplitter(handle, {
+    ...options,
+    getValue: () => {
+      const value = parseFloat(getComputedStyle(el).getPropertyValue(varName));
+      return Number.isFinite(value) ? value : fallback;
+    },
+    setValue: (px) => el.style.setProperty(varName, `${px}px`)
+  });
+}

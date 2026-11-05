@@ -627,21 +627,21 @@ export async function mountMarketChart(container, options = {}) {
     const smaPoint = latestSmaPoint(index);
     const displayTime = formatChartTime(candle.time, activeTimeframe);
     const selectedRow = selectedCandle
-      ? `<div style="margin-top:4px;color:#f5c842;">選取時間 <span>${esc(formatChartTime(selectedCandle.time, activeTimeframe))}</span></div>`
+      ? `<div class="lc-chart-legend__row lc-chart-legend__hl">選取時間 <span>${esc(formatChartTime(selectedCandle.time, activeTimeframe))}</span></div>`
       : '';
     const volumeAlert = isFutureSymbolActive() ? volumeAlertInfo(candle) : null;
     const volumeAlertColor = volumeAlert?.color || '#dfe7f7';
     const volumeRow = hasVolumeIndicator()
-      ? `<div style="margin-top:4px;color:#dfe7f7;">成交量 <span style="color:${volumeAlertColor};">${formatVolume(candle.volume || 0)}</span>${volumeAlert ? ` <span style="color:${volumeAlertColor};">超過${volumeAlert.label} ${formatVolume(volumeAlert.value)}</span>` : ''}</div>`
+      ? `<div class="lc-chart-legend__row">成交量 <span style="color:${volumeAlertColor};">${formatVolume(candle.volume || 0)}</span>${volumeAlert ? ` <span style="color:${volumeAlertColor};">超過${volumeAlert.label} ${formatVolume(volumeAlert.value)}</span>` : ''}</div>`
       : '';
     const smaRow = hasSmaIndicator()
-      ? `<div style="margin-top:4px;color:#dfe7f7;">SMA ${SMA_PERIOD} close <span style="color:${SMA_COLOR};">${smaPoint ? formatPrice(smaPoint.value) : '--'}</span></div>`
+      ? `<div class="lc-chart-legend__row">SMA ${SMA_PERIOD} close <span style="color:${SMA_COLOR};">${smaPoint ? formatPrice(smaPoint.value) : '--'}</span></div>`
       : '';
 
     shell.legend.innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center;white-space:nowrap;flex-wrap:nowrap;">
-        <span style="color:#f5c842;">K線時間 ${esc(displayTime)}</span>
-        <span style="color:#f5c842;">${esc(activeTimeframeConfig().label)}</span>
+      <div class="lc-chart-legend__head">
+        <span class="lc-chart-legend__hl">K線時間 ${esc(displayTime)}</span>
+        <span class="lc-chart-legend__hl">${esc(activeTimeframeConfig().label)}</span>
         <span>開 ${formatPrice(candle.open)}</span>
         <span>高 ${formatPrice(candle.high)}</span>
         <span>低 ${formatPrice(candle.low)}</span>

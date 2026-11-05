@@ -11,10 +11,10 @@ export class PatternTogglePanel {
     this.root = document.createElement('section');
     this.root.className = 'panel';
     this.root.innerHTML = `
-      <div class="panel__header"><span class="panel__badge">P</span><h3 class="panel__title">型態開關</h3><button class="toggle" style="margin-left:auto">收合</button></div>
+      <div class="panel__header"><span class="panel__badge">P</span><h3 class="panel__title">型態開關</h3><button class="toggle pattern-panel__toggle">收合</button></div>
       <div class="panel__body">
         <select class="cat-filter"><option value="all">全部分類</option></select>
-        <div class="list" style="margin-top:8px;display:grid;gap:8px"></div>
+        <div class="list pattern-panel__list"></div>
       </div>
     `;
     container.appendChild(this.root);
@@ -47,12 +47,12 @@ export class PatternTogglePanel {
     const list = this.root.querySelector('.list');
     const rows = PATTERN_REGISTRY.filter((p) => category === 'all' || p.category === category);
     list.innerHTML = rows.map((p) => `
-      <label style="display:block;border:1px solid var(--border);padding:6px;border-radius:4px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <label class="pattern-panel__item">
+        <div class="pattern-panel__row">
           <strong>${p.name}</strong>
           <input type="checkbox" data-id="${p.id}" ${this.enabled.has(p.id) ? 'checked' : ''}>
         </div>
-        <div style="font-size:12px;color:var(--text2)">${p.description}</div>
+        <div class="pattern-panel__desc">${p.description}</div>
       </label>
     `).join('');
 

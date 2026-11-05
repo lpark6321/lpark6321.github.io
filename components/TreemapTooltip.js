@@ -13,17 +13,6 @@ export class TreemapTooltip {
   constructor() {
     this.el = document.createElement('div');
     this.el.className = 'tm-tooltip';
-    this.el.style.cssText = `
-      position: fixed;
-      pointer-events: none;
-      z-index: 9999;
-      display: none;
-      background: #111520;
-      border: 1px solid #2a3550;
-      padding: 8px 12px;
-      min-width: 170px;
-      font-family: "JetBrains Mono", monospace;
-    `;
     document.body.appendChild(this.el);
   }
 
@@ -36,17 +25,17 @@ export class TreemapTooltip {
     const ratio = stock.volRatio != null && Number.isFinite(Number(stock.volRatio)) ? `${Number(stock.volRatio).toFixed(2)}x` : '--';
 
     this.el.innerHTML = `
-      <div style="font-size:13px;font-weight:700;color:#e8ecf5">${esc(stock.code)} ${esc(stock.name)}</div>
-      <div style="font-size:9px;color:#4a5a7a;margin-bottom:6px">${esc(stock.sector || '--')}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:10px">
-        <span style="color:#4a5a7a">現價</span>
-        <span style="color:#e8ecf5;text-align:right">${stock.price != null && Number.isFinite(price) ? price.toFixed(1) : '--'}</span>
-        <span style="color:#4a5a7a">漲跌</span>
-        <span style="color:${pctColor};text-align:right">${pctStr}</span>
-        <span style="color:#4a5a7a">量比</span>
-        <span style="color:#e8ecf5;text-align:right">${ratio}</span>
-        <span style="color:#4a5a7a">成交量</span>
-        <span style="color:#00c8d4;text-align:right">${formatVol(stock.volume)}</span>
+      <div class="tm-tooltip__title">${esc(stock.code)} ${esc(stock.name)}</div>
+      <div class="tm-tooltip__sector">${esc(stock.sector || '--')}</div>
+      <div class="tm-tooltip__grid">
+        <span class="tm-tooltip__label">現價</span>
+        <span class="tm-tooltip__value">${stock.price != null && Number.isFinite(price) ? price.toFixed(1) : '--'}</span>
+        <span class="tm-tooltip__label">漲跌</span>
+        <span class="tm-tooltip__value" style="color:${pctColor}">${pctStr}</span>
+        <span class="tm-tooltip__label">量比</span>
+        <span class="tm-tooltip__value">${ratio}</span>
+        <span class="tm-tooltip__label">成交量</span>
+        <span class="tm-tooltip__value tm-tooltip__value--vol">${formatVol(stock.volume)}</span>
       </div>
     `;
 

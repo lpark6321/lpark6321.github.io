@@ -1,21 +1,7 @@
 // 台股休市日（平日才列；週末本來就不開市）：證交所公布的國定假日與春節前後「僅辦理結算交割、市場無交易」日。
-// 期貨日盤與現貨同休。資料來源：證交所「市場開休市日期」。
-// shortcut: 只有已公布的年度；證交所公布 2027 年休市表後要補上，否則 2027 年假日會被當成交易日。
-export const TW_HOLIDAY_SOURCE_URL = 'https://www.twse.com.tw/zh/trading/holiday.html';
-export const TW_HOLIDAY_DATA_DATE = '2026-11-04';
+// 期貨日盤與現貨同休。資料在設定檔（data/config/marketConfig.json），證交所公布新年度後重算設定檔即可。
+import { MARKET_CONFIG } from './marketConfig.js';
 
-export const TW_MARKET_HOLIDAYS = new Set([
-  // 2026（民國 115 年）
-  '2026-01-01', // 開國紀念日
-  '2026-02-12', '2026-02-13', // 市場無交易，僅辦理結算交割
-  '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', // 農曆除夕及春節（含補假）
-  '2026-02-27', // 和平紀念日補假
-  '2026-04-03', '2026-04-06', // 兒童節、民族掃墓節補假
-  '2026-05-01', // 勞動節
-  '2026-06-19', // 端午節
-  '2026-09-25', // 中秋節
-  '2026-09-28', // 教師節
-  '2026-10-09', // 國慶日補假
-  '2026-10-26', // 臺灣光復暨金門古寧頭大捷紀念日補假
-  '2026-12-25' // 行憲紀念日
-]);
+export const TW_HOLIDAY_YEARS = MARKET_CONFIG.holidays.years;
+// 日期 'YYYY-MM-DD' → 休市名稱（例如「中華民國開國紀念日」）。
+export const TW_MARKET_HOLIDAYS = new Map(MARKET_CONFIG.holidays.days);

@@ -4,9 +4,9 @@ import { StrategyBuilder } from '../../components/StrategyBuilder.js';
 import { PLChart } from '../../components/PLChart.js';
 import { GreeksTable } from '../../components/GreeksTable.js';
 import { ChainViewer } from '../../components/ChainViewer.js';
-import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { bindCssVarSplitter } from '../../services/splitter.js';
 
-// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
+// mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   // 選擇權鏈目前是內建示範資料，標題列明白標示。
   container.innerHTML = `
@@ -23,17 +23,7 @@ export function mount(container) {
   `;
 
   const mainEl = container.querySelector('#p4-main');
-  const readVar = (name, fallback) => {
-    const value = parseFloat(getComputedStyle(mainEl).getPropertyValue(name));
-    return Number.isFinite(value) ? value : fallback;
-  };
-  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p4-main-split'), {
-    getValue: () => readVar('--p4-right-w', 340),
-    setValue: (px) => mainEl.style.setProperty('--p4-right-w', `${px}px`),
-    min: 260,
-    max: 680,
-    deltaSign: -1
-  });
+  const stopMainSplit = bindCssVarSplitter(container.querySelector('#p4-main-split'), mainEl, '--p4-right-w', { fallback: 340, min: 260, max: 680, deltaSign: -1 });
 
   const builder = new StrategyBuilder(container.querySelector('#p4-builder'), { defaultCollapsed: true });
   builder.root.classList.add('p4-resize');

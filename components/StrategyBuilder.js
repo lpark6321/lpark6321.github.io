@@ -1,5 +1,5 @@
 // 策略建立器元件（Page4）：新增腳位、一鍵套用預設策略、腳位清單（改口數／刪除／清空）、匯出匯入、損益摘要。
-// 腳位存在 store.strategyLegs（store 會自動存到瀏覽器 localStorage）。權利金一律從選擇權鏈取價：買進用賣價、賣出用買價。
+// 腳位存在 store.strategyLegs（store 會自動存到瀏覽器，見 data/storage.js）。權利金一律從選擇權鏈取價：買進用賣價、賣出用買價。
 import { store, sanitizeLegs } from '../data/store.js';
 import { DEFAULT_FUTURES_CONTRACT, FUTURES_CONTRACTS } from '../data/twDerivatives.js';
 import { esc } from '../services/html.js';
@@ -24,19 +24,19 @@ export class StrategyBuilder {
     this.root = document.createElement('section');
     this.root.className = 'panel';
     this.root.innerHTML = `
-      <div class="panel__header"><span class="panel__badge">S</span><h3 class="panel__title">策略組合</h3><button class="sb-toggle" style="margin-left:auto">收合</button></div>
+      <div class="panel__header"><span class="panel__badge">S</span><h3 class="panel__title">策略組合</h3><button class="sb-toggle">收合</button></div>
       <div class="panel__body sb-body">
-        <div class="inputs" style="display:grid;grid-template-columns:repeat(7,minmax(80px,1fr));gap:6px"></div>
-        <div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px" class="presets"></div>
-        <div class="sb-legs" style="margin-top:8px"></div>
-        <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="inputs sb-inputs"></div>
+        <div class="presets sb-presets"></div>
+        <div class="sb-legs"></div>
+        <div class="sb-actions">
           <button class="sb-clear">清空</button>
           <button class="sb-export">匯出策略</button>
           <button class="sb-import">匯入策略</button>
-          <span class="sb-msg" style="color:var(--text2);align-self:center"></span>
+          <span class="sb-msg"></span>
         </div>
       </div>
-      <div class="summary" style="padding:6px 12px;color:var(--text2)"></div>
+      <div class="summary sb-summary"></div>
     `;
     container.appendChild(this.root);
     this.root.querySelector('.sb-toggle').addEventListener('click', () => this.toggle());
@@ -156,7 +156,7 @@ export class StrategyBuilder {
   renderLegs(legs) {
     const box = this.root.querySelector('.sb-legs');
     if (!legs.length) {
-      box.innerHTML = '<div style="color:var(--text2)">尚未加入腳位</div>';
+      box.innerHTML = '<div class="sb-empty">尚未加入腳位</div>';
       return;
     }
     box.innerHTML = `<table><thead><tr><th>腳</th><th>買賣</th><th>類型</th><th>履約價／成交價</th><th>權利金</th><th>口數</th><th></th></tr></thead><tbody>${legs.map((leg, i) => `
@@ -166,7 +166,7 @@ export class StrategyBuilder {
         <td>${TYPE_LABEL[leg.type]}${leg.type === 'future' ? `（${esc(FUTURES_CONTRACTS.find((c) => c.value === leg.contract)?.label || '')}）` : ''}</td>
         <td>${fmtNum(leg.strike, 0)}</td>
         <td>${leg.type === 'future' ? '--' : fmtNum(leg.premium, 1)}</td>
-        <td><input class="input sb-qty" type="number" min="1" step="1" value="${leg.qty}" style="width:64px"></td>
+        <td><input class="input sb-qty" type="number" min="1" step="1" value="${leg.qty}"></td>
         <td><button class="sb-remove" title="刪除這隻腳">刪除</button></td>
       </tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('tr[data-index]').forEach((row) => {

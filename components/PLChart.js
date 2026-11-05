@@ -1,4 +1,5 @@
 // 損益圖元件（Page4）：依腳位畫到期損益曲線，單位新台幣（選擇權 50 元/點，期貨依契約）。
+import { setupHiDpiCanvas } from '../services/canvas.js';
 import { analyzeStrategy } from '../services/optionStrategy.js';
 import { fmtNum } from '../services/quoteUtils.js';
 
@@ -6,14 +7,9 @@ export class PLChart {
   constructor(container, options = {}) {
     this.options = { width: options.width || 740, height: options.height || 340 };
     this.canvas = document.createElement('canvas');
-    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.round(this.options.width * dpr);
-    this.canvas.height = Math.round(this.options.height * dpr);
     this.canvas.style.width = `${this.options.width}px`;
     this.canvas.style.height = `${this.options.height}px`;
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx = setupHiDpiCanvas(this.canvas, this.options.width, this.options.height);
     this.tooltip = document.createElement('div');
     this.tooltip.style.cssText = 'position:absolute;pointer-events:none;background:#111520;border:1px solid #263050;padding:4px 6px;font-size:12px;display:none';
     container.style.position = 'relative';

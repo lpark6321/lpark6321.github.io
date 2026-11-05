@@ -1,5 +1,6 @@
 // 證交所盤後資料（Page5 選股、全上市股名）：本益比／殖利率／股價淨值比 + 當日開高低收量，經本機代理取得，合併成一檔一列。
 // 只收上市股票（以有本益比資料的代碼為準，ETF 不在內）。
+import { reportHealth, trackedFetch } from './serviceHealth.js';
 import { yahooProxyUrl } from './yahooApi.js';
 
 const TWSE_TIMEOUT_MS = 20000;
@@ -22,7 +23,9 @@ function rocToIso(value) {
 async function fetchDataset(endpoint) {
   const url = yahooProxyUrl(endpoint);
   url.searchParams.set('_ts', String(Date.now()));
-  const response = await fetch(url.toString(), { cache: 'no-store', signal: AbortSignal.timeout(TWSE_TIMEOUT_MS) });
+  const response = await trackedFetch('proxy', url.toString(), { cache: 'no-store', signal: AbortSignal.timeout(TWSE_TIMEOUT_MS) });
+  // 代理連得上但回錯誤，是代理到證交所這段出問題。
+  reportHealth('twse', response.ok);
   if (!response.ok) throw new Error(`${endpoint} HTTP ${response.status}`);
   const rows = await response.json();
   if (!Array.isArray(rows) || !rows.length) throw new Error(`${endpoint} returned no rows`);

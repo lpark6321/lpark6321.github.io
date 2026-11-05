@@ -38,3 +38,6 @@
     grid-column: auto;
   }
 }
+
+.p5-topbar-tools { display: flex; gap: 8px; align-items: center; }
+.p5-note { color: var(--text2); }

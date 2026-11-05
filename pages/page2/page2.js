@@ -2,12 +2,13 @@
 import { store } from '../../data/store.js';
 import { Panel } from '../../components/Panel.js';
 import { Gauge } from '../../components/Gauge.js';
-import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { bindCssVarSplitter } from '../../services/splitter.js';
+import { subscribeSecond } from '../../services/feedClock.js';
 import { getDashboardDataSource, sourceInfo, subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
-import { TAIEX_BY_CODE } from '../../data/taiexWeightedConstituents.js';
-import { TW50_BY_CODE } from '../../data/tw50Constituents.js';
-import { MID100_BY_CODE } from '../../data/twMid100Constituents.js';
-import { TOP10_CODES, liveMarketMapQuotes, pctFromPrevClose, trendClass as c } from '../../services/quoteUtils.js';
+import { TAIEX_BY_CODE, TAIEX_DATA_DATE } from '../../data/taiexWeightedConstituents.js';
+import { TW50_BY_CODE, TW50_DATA_DATE } from '../../data/tw50Constituents.js';
+import { MID100_BY_CODE, MID100_DATA_DATE } from '../../data/twMid100Constituents.js';
+import { TOP10_CODES, liveMarketMapQuotes, pctFromPrevClose, trendClass as c, weightedAverage } from '../../services/quoteUtils.js';
 import { drawBars, drawCategoryCandle, drawSectorPie } from './page2Draw.js';
 
 const LIMIT_FALLBACK_PCT = 9.8;
@@ -37,27 +38,14 @@ function rowWeight(row) {
   return Number.isFinite(weight) && weight > 0 ? weight : 1;
 }
 
-function weightedAverage(rows, getter) {
-  let weighted = 0;
-  let totalWeight = 0;
-  rows.forEach((row) => {
-    const value = getter(row);
-    if (!Number.isFinite(value)) return;
-    const weight = rowWeight(row);
-    weighted += value * weight;
-    totalWeight += weight;
-  });
-  return totalWeight ? weighted / totalWeight : 0;
-}
+// 依加權指數權重平均（原本誤把 { row, ohlc } 當成 row 取權重，每檔都變成 1）。
+const weightedOhlc = (ohlcRows, key) => weightedAverage(ohlcRows, ({ ohlc }) => ohlc[key], ({ row }) => rowWeight(row));
 
 // 沒有任何報價的類股回傳 { label, empty: true }，圖上顯示「--」。
 function summarizeQuoteRows(label, rows) {
   const ohlcRows = rows.map((row) => ({ row, ohlc: quoteOhlcPct(row) })).filter((item) => item.ohlc);
   if (!ohlcRows.length) return { label, empty: true };
-  const open = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.open);
-  const close = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.close);
-  const high = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.high);
-  const low = weightedAverage(ohlcRows, ({ ohlc }) => ohlc.low);
+  const [open, close, high, low] = ['open', 'close', 'high', 'low'].map((key) => weightedOhlc(ohlcRows, key));
   return {
     label,
     open: +open.toFixed(2),
@@ -224,10 +212,10 @@ function buildCombinedAttackStats(marketMap) {
   return { up, down, limitUp, limitDown };
 }
 
-// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
+// mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 2｜台股溫度計</h2><span class="page-clock" id="p2-clock"></span></div>
+    <div class="page-topbar"><h2>PAGE 2｜台股溫度計 <span class="badge badge--mid" title="台灣50 ${TW50_DATA_DATE}｜中型100 ${MID100_DATA_DATE}">權重資料 ${TAIEX_DATA_DATE}</span></h2><span class="page-clock" id="p2-clock"></span></div>
     <div class="p2-layout" id="p2-layout">
       <aside class="p2-left" id="p2-left"></aside>
       <div class="grid-splitter-v p2-main-splitter" id="p2-main-split"></div>
@@ -240,10 +228,6 @@ export function mount(container) {
   const left = container.querySelector('#p2-left');
   const center = container.querySelector('#p2-center');
   const bottom = container.querySelector('#p2-bottom');
-  const readVar = (el, name, fallback) => {
-    const value = parseFloat(getComputedStyle(el).getPropertyValue(name));
-    return Number.isFinite(value) ? value : fallback;
-  };
 
   const p1 = new Panel(left, { badge: '1', title: '加權/台指/價差' }); p1.root.classList.add('p2-resize');
   p1.setContent('<div class="p2-flow" id="p2-main"></div>');
@@ -325,18 +309,8 @@ export function mount(container) {
   };
 
   const clockEl = container.querySelector('#p2-bigclock');
-  const stopMainSplit = bindHorizontalSplitter(container.querySelector('#p2-main-split'), {
-    getValue: () => readVar(layoutEl, '--p2-left-w', 360),
-    setValue: (px) => layoutEl.style.setProperty('--p2-left-w', `${px}px`),
-    min: 280,
-    max: 760
-  });
-  const stopCenterSplit = bindHorizontalSplitter(centerSplit, {
-    getValue: () => readVar(center, '--p2-center-left-w', 440),
-    setValue: (px) => center.style.setProperty('--p2-center-left-w', `${px}px`),
-    min: 300,
-    max: 900
-  });
+  const stopMainSplit = bindCssVarSplitter(container.querySelector('#p2-main-split'), layoutEl, '--p2-left-w', { fallback: 360, min: 280, max: 760 });
+  const stopCenterSplit = bindCssVarSplitter(centerSplit, center, '--p2-center-left-w', { fallback: 440, min: 300, max: 900 });
   const clockResize = new ResizeObserver(() => {
     const rect = p4.body.getBoundingClientRect();
     const size = Math.max(32, Math.min(96, Math.floor(Math.min(rect.width * 0.16, rect.height * 0.18))));
@@ -438,14 +412,14 @@ export function mount(container) {
     subscribeDashboardDataSource(renderSourceNote)
   ];
 
-  const clockTimer = setInterval(() => {
-    const t = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
-    container.querySelector('#p2-clock').textContent = t;
-    container.querySelector('#p2-bigclock').textContent = t;
-  }, 1000);
+  const clockEls = [container.querySelector('#p2-clock'), container.querySelector('#p2-bigclock')];
+  const stopClock = subscribeSecond((now) => {
+    const t = now.toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
+    clockEls.forEach((el) => { el.textContent = t; });
+  });
 
   return () => {
-    clearInterval(clockTimer);
+    stopClock();
     clockResize.disconnect();
     pieResize.disconnect();
     chartResize.disconnect();

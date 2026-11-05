@@ -6,9 +6,15 @@ import { TreemapControls } from '../../components/TreemapControls.js';
 import { TreemapTooltip } from '../../components/TreemapTooltip.js';
 import { TreemapDetail } from '../../components/TreemapDetail.js';
 import { SunburstChart } from '../../components/SunburstChart.js';
-import { bindHorizontalSplitter } from '../../services/splitter.js';
+import { bindCssVarSplitter } from '../../services/splitter.js';
 import { sourceInfo, subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
 import { liveMarketMapQuotes } from '../../services/quoteUtils.js';
+import { TAIEX_DATA_DATE } from '../../data/taiexWeightedConstituents.js';
+import { TW50_DATA_DATE } from '../../data/tw50Constituents.js';
+import { MID100_DATA_DATE } from '../../data/twMid100Constituents.js';
+
+// 權重名單的資料日期（設定檔重算時決定）：名單過舊時看得出來。
+const DATA_DATES_TITLE = `加權 ${TAIEX_DATA_DATE || '--'}｜台灣50 ${TW50_DATA_DATE || '--'}｜中型100 ${MID100_DATA_DATE || '--'}`;
 
 // 成分股名單（data/marketUniverse.js）負責名稱、分類與權重，版面比例因此不受報價缺漏影響；
 // marketMap 只覆蓋即時價格、漲跌、量與量比。沒有報價的股票這些欄位留空，圖上畫成「無資料」。
@@ -22,11 +28,11 @@ function mergeData() {
   });
 }
 
-// mount：建立頁面並回傳清理函式（由 index_hide.html 的路由在離開頁面時呼叫）。
+// mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
     <div class="p6-layout" id="p6-layout">
-      <div class="p6-controls" id="p6-ctrl"></div>
+      <div class="p6-controls" id="p6-ctrl"><span class="p6-data-date" title="權重資料日期：${DATA_DATES_TITLE}">權重 ${TAIEX_DATA_DATE || '--'}</span></div>
       <div class="p6-map" id="p6-map"></div>
       <div class="grid-splitter-v p6-splitter" id="p6-split"></div>
       <aside class="p6-detail" id="p6-detail" style="display:none"></aside>
@@ -37,18 +43,8 @@ export function mount(container) {
   const mapEl = container.querySelector('#p6-map');
   const detailEl = container.querySelector('#p6-detail');
 
-  const readVar = (name, fallback) => {
-    const value = parseFloat(getComputedStyle(layoutEl).getPropertyValue(name));
-    return Number.isFinite(value) ? value : fallback;
-  };
 
-  const stopDetailSplit = bindHorizontalSplitter(container.querySelector('#p6-split'), {
-    getValue: () => readVar('--p6-detail-w', 280),
-    setValue: (px) => layoutEl.style.setProperty('--p6-detail-w', `${px}px`),
-    min: 220,
-    max: 560,
-    deltaSign: -1
-  });
+  const stopDetailSplit = bindCssVarSplitter(container.querySelector('#p6-split'), layoutEl, '--p6-detail-w', { fallback: 280, min: 220, max: 560, deltaSign: -1 });
 
   const tooltip = new TreemapTooltip();
   const detail = new TreemapDetail(detailEl, {

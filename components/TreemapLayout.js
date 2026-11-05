@@ -1,4 +1,5 @@
 // 市場地圖布局演算法：計算方塊圖、類股群組與旭日圖所需的比例資料。
+import { weightedAverage } from '../services/quoteUtils.js';
 import { TW50_MAJOR_GROUP_ORDER } from '../data/tw50Constituents.js';
 import { MID100_MAJOR_GROUP_ORDER } from '../data/twMid100Constituents.js';
 import {
@@ -84,19 +85,8 @@ export function metricColor(stock, metric) {
   return metric === 'volRatio' ? getVolumeColor(Number(value)) : getHeatColor(Number(value));
 }
 
-// 依權重（stock.value）加權平均；沒有報價的股票不算進去，全部沒有就回傳 null。
-export function weightedAverage(stocks, key) {
-  let total = 0;
-  let weight = 0;
-  stocks.forEach((stock) => {
-    const value = stock[key];
-    if (value == null || !Number.isFinite(Number(value))) return;
-    const w = Number(stock.value) || 1;
-    total += Number(value) * w;
-    weight += w;
-  });
-  return weight ? total / weight : null;
-}
+// 類股平均：依權重（stock.value）加權；沒有報價的股票不算進去，全部沒有就回傳 null。
+export const sectorAverage = (stocks, key) => weightedAverage(stocks, (stock) => stock[key], (stock) => stock.value);
 
 function classifyMajorBySector(stock) {
   const sector = String(stock.sector || stock.taiexSector || '');
@@ -141,8 +131,8 @@ function buildSectorOnlyGroups(taiexStocks) {
         taiexWeightPct: row.weightPct,
         value: row.weightPct,
         marketCap: row.weightPct,
-        changePct: weightedAverage(members.get(row.name), 'changePct'),
-        volRatio: weightedAverage(members.get(row.name), 'volRatio'),
+        changePct: sectorAverage(members.get(row.name), 'changePct'),
+        volRatio: sectorAverage(members.get(row.name), 'volRatio'),
         syntheticConstituentOnly: true,
         isSectorAggregate: true
       }]
@@ -174,8 +164,8 @@ function buildWeightedGroups(taiexStocks, { primarySectors, sectorOrder, otherSe
           taiexWeightPct: remainder,
           value: remainder,
           marketCap: remainder,
-          changePct: weightedAverage(minors, 'changePct'),
-          volRatio: weightedAverage(minors, 'volRatio'),
+          changePct: sectorAverage(minors, 'changePct'),
+          volRatio: sectorAverage(minors, 'volRatio'),
           syntheticConstituentOnly: true,
           isWeightedRemainder: true
         });

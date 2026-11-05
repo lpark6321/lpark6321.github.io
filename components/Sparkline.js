@@ -1,17 +1,13 @@
+import { setupHiDpiCanvas } from '../services/canvas.js';
 // Sparkline 元件：呈現小型走勢線。
 export class Sparkline {
   constructor(container, options = {}) {
     this.options = { color: options.color || 'var(--red)', fill: true, width: options.width || 180, height: options.height || 56 };
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'sparkline__canvas';
-    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.round(this.options.width * dpr);
-    this.canvas.height = Math.round(this.options.height * dpr);
     this.canvas.style.width = `${this.options.width}px`;
     this.canvas.style.height = `${this.options.height}px`;
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx = setupHiDpiCanvas(this.canvas, this.options.width, this.options.height);
     container.appendChild(this.canvas);
   }
 

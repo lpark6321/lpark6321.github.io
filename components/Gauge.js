@@ -1,4 +1,6 @@
 // 儀表板元件：繪製半圓量表與指針，用於多空攻擊等強度顯示。
+import { setupHiDpiCanvas } from '../services/canvas.js';
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -21,16 +23,9 @@ export class Gauge {
     };
 
     this.canvas = document.createElement('canvas');
-    // 依 devicePixelRatio 放大 backing store、以 CSS px 座標繪圖，高 DPI（Windows 125%/150%）才不會糊。
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.round(this.options.width * dpr);
-    this.canvas.height = Math.round(this.options.height * dpr);
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
-    this.canvas.style.display = 'block';
+    this.canvas.className = 'gauge__canvas';
     container.appendChild(this.canvas);
-    this.ctx = this.canvas.getContext('2d');
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx = setupHiDpiCanvas(this.canvas, this.options.width, this.options.height);
   }
 
   update(payload = 0) {

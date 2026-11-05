@@ -1,4 +1,6 @@
 // Yahoo 經本機 proxy 的共用存取：proxy 位址、URL 組裝、請求逾時、報價分批抓取與報價欄位轉換。
+import { trackedFetch } from './serviceHealth.js';
+
 export const DEFAULT_YAHOO_PROXY_BASE = 'http://127.0.0.1:8787/api';
 // 單一請求最多等 8 秒，避免卡住的請求讓輪詢器一直停在「請求中」而不再更新。
 export const REQUEST_TIMEOUT_MS = 8000;
@@ -14,7 +16,7 @@ async function fetchProxyJson(endpoint, params, label) {
   const url = yahooProxyUrl(endpoint);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
   url.searchParams.set('_ts', String(Date.now()));
-  const response = await fetch(url.toString(), {
+  const response = await trackedFetch('proxy', url.toString(), {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)

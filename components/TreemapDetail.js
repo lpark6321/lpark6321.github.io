@@ -15,8 +15,8 @@ export class TreemapDetail {
     this.container.innerHTML = `
       <div class="p6-detail-header">
         <button class="p6-detail-close" title="關閉詳情">✕</button>
-        <div style="font-size:14px;font-weight:700;color:#e8ecf5;margin-bottom:2px">${esc(stock.code)}</div>
-        <div style="font-size:12px;color:#4a5a7a">${esc(stock.name)}</div>
+        <div class="tm-detail__code">${esc(stock.code)}</div>
+        <div class="tm-detail__name">${esc(stock.name)}</div>
       </div>
       <div class="p6-detail-content">
         <div class="p6-info-row">

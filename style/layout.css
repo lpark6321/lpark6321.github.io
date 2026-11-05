@@ -1,5 +1,6 @@
 ﻿* { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 body {
   min-height: 100vh;
   background: var(--bg);
@@ -89,6 +90,20 @@ body {
   color: var(--text2);
   font-size: 13px !important;
   line-height: 1.2;
+  white-space: nowrap;
+}
+.shell-market {
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 13px !important;
+  white-space: nowrap;
+}
+.shell-market[data-state="open"] {
+  color: var(--gold);
+}
+.shell-health {
+  color: var(--red);
+  font-size: 13px !important;
   white-space: nowrap;
 }
 .shell-refresh {

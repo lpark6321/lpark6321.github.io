@@ -87,3 +87,13 @@
     display: none;
   }
 }
+
+/* 自選列表側欄（components/WatchlistSidebar.js，只用在本頁） */
+.wl-zoom { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.wl-addrow { display: grid; grid-template-columns: 1fr 130px 44px; gap: 6px; margin-bottom: 8px; }
+.wl-tools { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.wl-msg { align-self: center; font-size: 12px; color: var(--text2); }
+.wl-group { min-height: 24px; }
+.wl-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; cursor: pointer; gap: 8px; }
+.wl-row .remove { padding: 2px 6px; }
+.wl-empty { padding: 4px 0; color: var(--text2); font-size: 12px; }

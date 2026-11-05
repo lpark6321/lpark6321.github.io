@@ -23,6 +23,31 @@ export function subscribeFeedTick(callback) {
   return () => listeners.delete(callback);
 }
 
+// 每秒時鐘：各頁的時鐘、倒數與標頭的台股狀態共用一個計時器，沒有訂閱者就停。callback 收到當下的 Date。
+const secondListeners = new Set();
+let secondTimer = null;
+
+export function subscribeSecond(callback) {
+  secondListeners.add(callback);
+  secondTimer ??= setInterval(() => {
+    const now = new Date();
+    secondListeners.forEach((listener) => {
+      try {
+        listener(now);
+      } catch (error) {
+        console.error('[feedClock] second listener failed:', error);
+      }
+    });
+  }, 1000);
+  return () => {
+    secondListeners.delete(callback);
+    if (!secondListeners.size) {
+      clearInterval(secondTimer);
+      secondTimer = null;
+    }
+  };
+}
+
 // 手動更新：不等下一個節拍，立刻通知一次。
 export function tickNow() {
   tickAll();

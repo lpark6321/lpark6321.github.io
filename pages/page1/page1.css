@@ -259,3 +259,8 @@
 .p1-levels-ctrl select { height: 26px; }
 .p1-levels-ctrl input { height: 26px; flex: 1; min-width: 0; }
 .p1-levels-ctrl input[hidden] { display: none; }
+
+.p1-amp20-canvas { width: 100%; height: 100%; }
+.p1-mini-name, .p1-chart-error { color: var(--text2); }
+.p1-volume-bar { height: 14px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.p1-volume-bar__fill { height: 100%; width: 0; background: var(--gold); }

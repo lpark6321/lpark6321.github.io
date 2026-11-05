@@ -1,5 +1,6 @@
 // K 線與券商報價的資料來源：Yahoo、FinMind、券商本機橋接、期交所 CSV 與模擬資料，全部轉成標準 OHLCV。
 // 哪個來源能做什麼（橋接位址等）定義在 dashboardDataSource.js 的來源清單。
+import { trackedFetch } from './serviceHealth.js';
 import { TW_FUTURES_BY_SYMBOL } from '../data/twDerivatives.js';
 import { sourceInfo } from './dashboardDataSource.js';
 import { TW_SESSIONS, isTwFuturesDaySession, minutesOf } from './marketCalendar.js';
@@ -128,7 +129,7 @@ export async function fetchBrokerCandles({ brokerUrl, symbol, timeframe = 'D' })
   url.searchParams.set('timeframe', timeframe);
   url.searchParams.set('_ts', String(Date.now()));
 
-  const response = await fetch(url.toString(), {
+  const response = await trackedFetch('bridge', url.toString(), {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -263,7 +264,7 @@ async function fetchFinMindFuturesDailyCandles(options = {}) {
   url.searchParams.set('data_id', dataId);
   url.searchParams.set('_ts', String(Date.now()));
 
-  const response = await fetch(url.toString(), {
+  const response = await trackedFetch('proxy', url.toString(), {
     cache: 'no-store',
     headers: finMindHeaders(token),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -290,7 +291,7 @@ export async function fetchFinMindFuturesCandles(options = {}) {
   url.searchParams.set('data_id', futuresId);
   url.searchParams.set('_ts', String(Date.now()));
 
-  const response = await fetch(url.toString(), {
+  const response = await trackedFetch('proxy', url.toString(), {
     cache: 'no-store',
     headers: finMindHeaders(token),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -573,7 +574,7 @@ export async function fetchBrokerQuote(source, symbol) {
   const url = new URL(`${sourceInfo(source).bridge}/xq-quote`);
   url.searchParams.set('symbol', symbol);
   url.searchParams.set('_ts', String(Date.now()));
-  const response = await fetch(url.toString(), {
+  const response = await trackedFetch('bridge', url.toString(), {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)

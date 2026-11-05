@@ -8,6 +8,7 @@ import {
 } from './services/dashboardDataSource.js';
 import { subscribeFeedTick } from './services/feedClock.js';
 import { esc } from './services/html.js';
+import { fmtNum, hasValue } from './services/quoteUtils.js';
 
 const QUOTES = [
   { symbol: '^TWII', name: 'Taiwan Weighted Index', group: 'major' },
@@ -46,23 +47,9 @@ const elements = {
   taifexUrlInput: document.getElementById('taifex-url')
 };
 
-function formatPrice(value) {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 'Data unavailable';
-  const digits = value >= 100 ? 2 : value >= 1 ? 3 : 4;
-  return value.toLocaleString('en-US', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits
-  });
-}
-
-function formatSigned(value, digits = 2) {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 'Data unavailable';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toLocaleString('en-US', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits
-  })}`;
-}
+// 數字格式與主儀表板共用 quoteUtils（沒有值顯示「--」）；小於 100 的報價（匯率、加密幣）多留幾位小數。
+const formatPrice = (value) => fmtNum(value, value >= 100 ? 2 : value >= 1 ? 3 : 4);
+const formatSigned = (value, digits = 2) => (hasValue(value) && value > 0 ? '+' : '') + fmtNum(value, digits);
 
 function getDirection(change) {
   if (typeof change !== 'number' || Number.isNaN(change)) return 'flat';
@@ -184,7 +171,7 @@ function applyProvider(type) {
   updateDashboard();
 }
 
-// 更新頻率與主儀表板共用同一個設定（localStorage dashboard.pollSeconds）。
+// 更新頻率與主儀表板共用同一個設定（瀏覽器設定 gio.pollSeconds，見 data/storage.js）。
 function renderPollControl() {
   const seconds = getPollIntervalSeconds();
   if (elements.pollSelect) elements.pollSelect.value = String(seconds);

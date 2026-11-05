@@ -1,4 +1,4 @@
-// 世界時鐘列元件：顯示多市場城市時間與交易狀態。
+// 世界時鐘列元件：顯示多市場城市時間與交易狀態。標籤只建一次，由頁面共用的每秒時鐘呼叫 tick() 改文字與顏色。
 const CITIES = [
   { name: '台北', tz: 'Asia/Taipei', marketId: 'usdtwd' },
   { name: '首爾', tz: 'Asia/Seoul', marketId: 'kospi' },
@@ -16,23 +16,20 @@ export class WorldClockStrip {
     this.isOpen = options.isOpen || (() => false);
     this.root = document.createElement('section');
     this.root.className = 'panel';
-    this.root.innerHTML = '<div class="panel__body clocks" style="display:flex;gap:10px;flex-wrap:wrap"></div>';
-    this.wrap = this.root.querySelector('.clocks');
+    this.root.innerHTML = `<div class="panel__body clocks">${CITIES.map(() => '<span class="badge"></span>').join('')}</div>`;
+    this.badges = [...this.root.querySelectorAll('.badge')];
     container.appendChild(this.root);
     this.tick();
-    this.timer = setInterval(() => this.tick(), 1000);
   }
 
-  tick() {
-    const now = new Date();
-    this.wrap.innerHTML = CITIES.map((c) => {
-      const open = this.isOpen(c.marketId);
-      return `<span class="badge ${open ? 'badge--high' : 'badge--low'}">${c.name} ${fmt(now, c.tz)}</span>`;
-    }).join('');
+  tick(now = new Date()) {
+    CITIES.forEach((c, i) => {
+      this.badges[i].textContent = `${c.name} ${fmt(now, c.tz)}`;
+      this.badges[i].className = `badge ${this.isOpen(c.marketId) ? 'badge--high' : 'badge--low'}`;
+    });
   }
 
   destroy() {
-    clearInterval(this.timer);
     this.root.remove();
   }
 }
