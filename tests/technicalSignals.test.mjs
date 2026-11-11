@@ -60,3 +60,12 @@ assert.equal(DEFAULT_FILTER_SETTINGS.volShrinkRatio, 0.5);
 const stocks = [{ code: 'a', volume: 2000 }, { code: 'b', volume: 900 }, { code: 'c', volume: 9000 }, { code: 'd', volume: 5000 }];
 assert.deepEqual(historyCandidates(stocks, 2).map((s) => s.code), ['c', 'd']);
 assert.deepEqual(historyCandidates(stocks).map((s) => s.code), ['c', 'd', 'a']);
+
+// RSI 超賣反彈：RSI 由 30 以下向上穿出才成立（跌破 30 的那一根不算）。
+const { rsi } = await import('../services/indicators.js');
+const slide = [...Array.from({ length: 20 }, (_, i) => 100 - i * 2), ...Array.from({ length: 10 }, (_, i) => 62 + i * 2)];
+const rsiValues = rsi(slide, 14);
+const upAt = rsiValues.findIndex((v, i) => i > 0 && rsiValues[i - 1] <= 30 && v > 30);
+assert.ok(upAt > 0, 'series crosses RSI 30 upward');
+assert.equal(ts.rsiCrossAbove(bars(slide.slice(0, upAt + 1))), true);
+assert.equal(ts.rsiCrossAbove(bars(slide.slice(0, upAt))), false);

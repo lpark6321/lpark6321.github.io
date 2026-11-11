@@ -116,6 +116,13 @@ const state = {
   indexExtras: null,
   marketAmountHistory: null,
   marketBreadth: null,
+  // 目前顯示的分頁（app.js 寫入）：市場寬度、籌碼監控這種大量請求只在該頁開著時才抓。
+  activePage: null,
+  // Page8 籌碼監控（marketFeed 寫入，不受資料來源限制）：盤後資料 { days, spot, openInterest, institutional, options, pcRatio, amounts }、
+  // 前一交易日盤中累計成交金額 { date, points: [{ minute, amountYi }] }；chipDays＝Page8 選的天數。
+  chipMonitor: null,
+  chipPrevIntraday: null,
+  chipDays: [20, 60].includes(loadSetting('page8Days')) ? loadSetting('page8Days') : 20,
   topStocks: TAIEX_TOP10.map(({ code, name, weightPct }) => ({ code, name, weightPct })),
   watchlist: loadRows('watchlist', sanitizeWatchlist, DEFAULT_WATCHLIST),
   watchGroups: loadRows('watchGroups', sanitizeGroups, DEFAULT_GROUPS),

@@ -130,6 +130,7 @@
 }
 .shell-menu__item:hover { background: rgba(245, 200, 66, 0.12); color: var(--gold); }
 .shell-menu__hint { padding: 6px 10px; color: var(--text2); font-size: var(--fs-xs); }
+.shell-menu__check { display: flex; align-items: center; gap: 6px; padding: 4px 10px; white-space: nowrap; cursor: pointer; }
 
 /* 通知中心（鈴鐺）：未讀數徽章疊在按鈕右上角，不佔寬度；下拉清單最新在前，太長就捲動。 */
 .shell-bell + .shell-menu { margin-left: 0; }

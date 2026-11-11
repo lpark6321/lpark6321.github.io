@@ -33,8 +33,8 @@ export function macdGoldenCross(candles, fast = 12, slow = 26, signalPeriod = 9)
   return crossUp(dif, signal);
 }
 
-// RSI 由上往下跌破 level（Page3「RSI超賣」沿用的舊規則）。
-export const rsiCrossBelow = (candles, level = 30, period = 14) => isPeriod(period) && crossDown(rsi(closesOf(candles), period), candles.map(() => level));
+// RSI 由超賣區（level 以下）向上穿出。
+export const rsiCrossAbove = (candles, level = 30, period = 14) => isPeriod(period) && crossUp(rsi(closesOf(candles), period), candles.map(() => level));
 
 // 今日量對前 N 日均量（不含今日）的倍數；算不出來回傳 null。
 export function volumeRatio(candles, days = 5) {

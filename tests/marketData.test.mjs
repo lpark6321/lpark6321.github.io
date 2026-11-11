@@ -95,3 +95,48 @@ assert.equal(series.compareWithPrevDay({ high: 99, low: 89 }, prev), 'green');
 assert.equal(series.compareWithPrevDay({ high: 100, low: 90 }, prev), 'yellow');
 assert.equal(series.compareWithPrevDay({ high: 101, low: 89 }, prev), 'grey');
 assert.equal(series.compareWithPrevDay({ high: 101, low: 89 }, null), null);
+
+// ---- 第五輪：持倉成本每個結算月從結算日重算（2026/01 結算日 1/21） ----
+assert.equal(hist.settlementCycle('2026-01-20'), '2025-12');
+assert.equal(hist.settlementCycle('2026-01-21'), '2026-01');
+assert.equal(hist.settlementCycle('2026-11-10'), '2026-10');
+const cycle = hist.buildPositionCost([
+  ['2026-01-20', 'foreign', 0, 0, -100, amt(-100, 1000)],
+  ['2026-01-21', 'foreign', -100, amt(-100, 1300), -200, amt(-200, 1250)],
+  ['2026-01-22', 'foreign', -100, amt(-100, 1400), -300, amt(-300, 1300)]
+], 'foreign');
+assert.deepEqual(cycle.map((row) => Math.round(row.cost)), [1000, 1250, 1300]); // 1/21 重算：用當天未平倉均價
+assert.deepEqual(cycle.map((row) => row.change), [0, -100, -100]);
+
+// ---- 台指(全)＝前一晚夜盤＋日盤；新夜盤開始後就是夜盤 ----
+const mis = await import('../services/misQuotes.js');
+const dayQ = { price: 105, open: 100, high: 110, low: 99, volume: 10, date: '20261111' };
+const nightQ = { price: 101, open: 95, high: 103, low: 90, volume: 5, date: '20261110' };
+assert.deepEqual(mis.mergeFullSession(dayQ, nightQ), { ...dayQ, open: 95, high: 110, low: 90, volume: 15 });
+assert.equal(mis.mergeFullSession(dayQ, { ...nightQ, date: '20261111' }).price, 101);
+assert.equal(mis.mergeFullSession(dayQ, { price: null }), dayQ);
+
+// ---- 籌碼監控組表 ----
+const chips = await import('../services/chipMonitor.js');
+assert.deepEqual(chips.buildSpotFlows([['2026-11-10', 1e8, -2e8, 3e8, 2e8]]), [{ date: '2026-11-10', foreign: 1, trust: -2, dealer: 3, total: 2 }]);
+const oi = chips.buildOpenInterest([['2026-11-10', 'TX', 100], ['2026-11-10', 'MTX', 40], ['2026-11-10', 'TMF', 200], ['2026-11-11', 'TX', 1]]);
+assert.deepEqual(oi, [{ date: '2026-11-10', TX: 100, MTX: 40, TMF: 200, total: 120 }]);
+const instRows = (n) => ['foreign', 'trust', 'dealer'].map((id, i) => ['2026-11-10', id, 0, 0, n * (i + 1), 0]);
+const instOi = chips.buildInstitutionalOI({ TXF: instRows(-100), MXF: instRows(40), TMF: instRows(200) });
+assert.deepEqual(instOi[0].foreign, { TX: -100, MTX: 40, TMF: 200, total: -80 });
+assert.equal(instOi[0].trust.total, -160);
+const opt = chips.buildOptionInstitutional([['2026-11-10', 'call', 'foreign', 5, 3, 2, 150000], ['2026-11-10', 'put', 'foreign', 1, 4, -3, -50000]]);
+assert.deepEqual(opt[0].foreign, { call: 2, callAmt: 1.5, put: -3, putAmt: -0.5 });
+assert.deepEqual(chips.lastWithChange([{ date: 'a', v: 1 }, { date: 'b', v: 4 }], (row) => row.v), { value: 4, change: 3, date: 'b' });
+assert.equal(chips.lastWithChange([], (row) => row.v), null);
+const nineAm = Date.parse('2026-11-11T01:00:00Z') / 1000; // 台北 09:00
+assert.deepEqual(chips.cumulativeMinutes([{ time: nineAm, volume: 100 }, { time: nineAm + 60, volume: 50 }]), [{ minute: 540, amountYi: 1 }, { minute: 541, amountYi: 1.5 }]);
+
+// ---- 籌碼提醒 ----
+const alerts = await import('../services/chipAlerts.js');
+assert.equal(alerts.foreignOiNotice([{ date: 'd', netOI: -100, change: -4999 }]), null);
+assert.equal(alerts.foreignOiNotice([{ date: 'd', netOI: -100, change: -5000 }]).key, 'chips|foreign-oi|d');
+const history = Array.from({ length: 20 }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, '0')}`, amountYi: 1000 }));
+assert.equal(alerts.amountNotice({ volEstimate: 1600 }, history, '2026-11-11', 9 * 60 + 29), null);
+assert.equal(alerts.amountNotice({ volEstimate: 1499 }, history, '2026-11-11', 600), null);
+assert.match(alerts.amountNotice({ volEstimate: 1500 }, [...history, { date: '2026-11-11', amountYi: 1 }], '2026-11-11', 600).body, /1\.50 倍/);

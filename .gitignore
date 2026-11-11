@@ -368,3 +368,5 @@ tests/.browser-shots/
 
 # 忽略該資料夾裡的所有檔案
 ref/*
+# 代理的盤後資料本機快取
+bridges/.cache/

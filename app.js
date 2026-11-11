@@ -1,5 +1,5 @@
 // 主儀表板外殼（index_hide.html）：分頁路由、標頭的資料來源／更新頻率／手動更新、台股與期貨狀態倒數、
-// 提示（服務連不上、資料延遲、設定檔過期）、通知中心（鈴鐺）、「⋯」選單（設定備份／還原）與鍵盤快捷鍵（1–7 切頁、R 手動更新）。
+// 提示（服務連不上、資料延遲、設定檔過期）、通知中心（鈴鐺）、「⋯」選單（設定備份／還原）與鍵盤快捷鍵（1–8 切頁、R 手動更新）。
 import {
   DASHBOARD_DATA_SOURCES,
   POLL_INTERVAL_OPTIONS,
@@ -27,6 +27,8 @@ import {
   isTwQuoteSession
 } from './services/marketCalendar.js';
 import { refreshMarketFeed, startMarketFeed } from './services/marketFeed.js';
+import { amountNotice, foreignOiNotice } from './services/chipAlerts.js';
+import { DISK_CACHE_GROUPS, diskCacheEnabled, setDiskCache } from './services/chipMonitor.js';
 import { clearNotices, getNotices, markAllRead, pushNotice, subscribeNotices, unreadCount } from './services/notifications.js';
 import { SERVICE_LABELS, failingServices, subscribeHealth } from './services/serviceHealth.js';
 
@@ -51,7 +53,8 @@ const pageModules = {
   page4: () => import('./pages/page4/page4.js'),
   page5: () => import('./pages/page5/page5.js'),
   page6: () => import('./pages/page6/page6.js'),
-  page7: () => import('./pages/page7/page7.js')
+  page7: () => import('./pages/page7/page7.js'),
+  page8: () => import('./pages/page8/page8.js')
 };
 const PAGE_KEYS = Object.keys(pageModules);
 
@@ -215,7 +218,7 @@ function renderNotes() {
 const bell = document.getElementById('dashboard-notices');
 const bellBadge = document.getElementById('dashboard-notices-badge');
 const bellList = document.getElementById('dashboard-notices-list');
-const NOTICE_KIND_LABEL = { pattern: '型態', delay: '延遲', connection: '連線', bigOrder: '大單', info: '訊息' };
+const NOTICE_KIND_LABEL = { pattern: '型態', delay: '延遲', connection: '連線', bigOrder: '大單', chips: '籌碼', info: '訊息' };
 const noticeTime = (at) => new Date(at).toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
 
 // 徽章每秒更新一次（跨日時通知清空，數字要跟著歸零）。
@@ -253,6 +256,14 @@ const pushPatternNotices = (alerts) => [...alerts].reverse().forEach((alert) => 
 store.subscribe('patternAlerts', pushPatternNotices);
 pushPatternNotices(store.get('patternAlerts'));
 
+// 籌碼提醒：外資台指期淨未平倉單日大增減（盤後）、盤中預估成交金額爆量（門檻在 services/chipAlerts.js）。
+const pushChipNotice = (notice) => notice && pushNotice(notice);
+store.subscribe('institutional', (data) => pushChipNotice(foreignOiNotice(data?.foreign)));
+store.subscribe('taiex', (taiex) => {
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  pushChipNotice(amountNotice(taiex, store.peek('marketAmountHistory'), now.toISOString().slice(0, 10), now.getUTCHours() * 60 + now.getUTCMinutes()));
+});
+
 subscribeHealth(renderNotes);
 subscribeSecond((now) => {
   renderMarketStatus(now);
@@ -281,6 +292,13 @@ const openSettingsFile = createFilePicker(async (file) => {
   }
 });
 document.getElementById('dashboard-settings-import').addEventListener('click', openSettingsFile);
+
+// 盤後資料存本機（代理的 bridges/.cache/）：只存不會再變的過去月份／日期，依資料群組勾選。
+const diskList = document.getElementById('dashboard-disk-cache');
+diskList.innerHTML = Object.entries(DISK_CACHE_GROUPS)
+  .map(([group, label]) => `<label class="shell-menu__check"><input type="checkbox" data-group="${esc(group)}"${diskCacheEnabled(group) ? ' checked' : ''}> ${esc(label)}</label>`)
+  .join('');
+diskList.addEventListener('change', (event) => setDiskCache(event.target.dataset.group, event.target.checked));
 
 renderDataSourceControl();
 startMarketFeed();
@@ -320,6 +338,7 @@ async function navigate(page, { pushHash = true } = {}) {
   app.innerHTML = '';
   activePage = page;
   setActiveTab(page);
+  store.set('activePage', page);
 
   try {
     const mod = await pageModules[page]();
@@ -361,7 +380,7 @@ function watchPixelRatio() {
 }
 watchPixelRatio();
 
-// 快捷鍵：1–7 切頁、R 手動更新；在輸入框裡打字或按著 Ctrl/Alt/Meta 時不攔。
+// 快捷鍵：1–8 切頁、R 手動更新；在輸入框裡打字或按著 Ctrl/Alt/Meta 時不攔。
 document.addEventListener('keydown', (event) => {
   if (event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
   if (event.target.closest?.('input, select, textarea, [contenteditable="true"]')) return;

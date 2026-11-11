@@ -3,7 +3,7 @@
 import { store } from '../data/store.js';
 import { loadSetting, saveSetting } from '../data/storage.js';
 import {
-  closeCrossAboveSma, kdGoldenCross, lowTouchesBollingerLower, macdGoldenCross, rsiCrossBelow, volumeSurge
+  closeCrossAboveSma, kdGoldenCross, lowTouchesBollingerLower, macdGoldenCross, rsiCrossAbove, volumeSurge
 } from './technicalSignals.js';
 import { isDailyRefreshDue, isTwQuoteSession } from './marketCalendar.js';
 import { dateKeyFromUnix, fetchStockDaily } from './marketSources.js';
@@ -39,7 +39,7 @@ export const PATTERN_REGISTRY = [
     id: 'rsi_oversold',
     name: 'RSI超賣反彈',
     category: 'RSI',
-    condition: (candles) => rsiCrossBelow(candles, 30),
+    condition: (candles) => rsiCrossAbove(candles, 30),
     severity: 'high',
     description: 'RSI由超賣區(30以下)向上穿出'
   },

@@ -118,7 +118,7 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
       <div class="p1-amp-list">${kv('ampMax', '最大振幅')}${kv('ampBig', '大大振幅', '高於平均的那幾期再平均')}${kv('ampAvg', '平均振幅')}${kv('ampSmall', '小小振幅', '低於平均的那幾期再平均')}${kv('ampMin', '最小振幅')}${kv('ampToday')}</div>
     </div>
     <div class="p1-side-inst">
-      <div class="p1-block-title" title="期交所三大法人臺股期貨未平倉，近一年逐日累計的平均成本（自行計算，和玩股網的起算方式不同，數字會有差異）">三大法人持倉成本（淨口數）</div>
+      <div class="p1-block-title" title="期交所三大法人臺股期貨未平倉，每個結算月從結算日起逐日累計的平均成本（自行計算，和玩股網可能有幾十點差異）">三大法人持倉成本（淨口數）<span class="p1-data-date"></span></div>
       <div class="p1-amp-list">${Object.entries(INSTITUTIONS).map(([id, label]) => kv(`inst-${id}`, label)).join('')}</div>
     </div>
   `);
@@ -182,8 +182,12 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
     periodButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.period === view.ampPeriod));
   };
 
+  const instDate = body.querySelector('.p1-data-date');
   const renderInstitutional = () => {
     const data = store.get('institutional');
+    // 盤後資料（約 15:00 公布）：標出是哪一天的，盤中不會被當成今天的數字。
+    const date = data?.foreign?.at(-1)?.date;
+    set(instDate, date ? ` ${date.slice(5).replace('-', '/')}` : '');
     Object.keys(INSTITUTIONS).forEach((id) => {
       const last = data?.[id]?.at(-1);
       set(fields[`inst-${id}`], last ? `${formatFuturesValue(last.cost)} (${last.netOI > 0 ? '+' : ''}${n(last.netOI, 0)})` : '--', last ? c(last.netOI) : '');

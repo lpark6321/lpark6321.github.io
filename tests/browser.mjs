@@ -16,7 +16,7 @@ const SIZES = [
   { name: '1536x864@125%', width: 1536, height: 864, dpr: 1.25, maxHeader: 110 },
   { name: '1920x1080', width: 1920, height: 1080, dpr: 1, maxHeader: 100 }
 ];
-const PAGES = ['page1', 'page2', 'page3', 'page4', 'page5', 'page6', 'page7'];
+const PAGES = ['page1', 'page2', 'page3', 'page4', 'page5', 'page6', 'page7', 'page8'];
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   'C:/Program Files/Google/Chrome/Application/chrome.exe',

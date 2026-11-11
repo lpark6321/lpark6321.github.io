@@ -1,5 +1,6 @@
 // 證交所／期交所 MIS（網站自己用的即時資料介面，經本機代理轉送）：「公開資料」來源用來補加權成交金額與 1 分走勢、台指期、選擇權。
 // 解析函式不抓資料（tests/ 直接測）；fetch* 經代理取資料，連不上記在 serviceHealth。
+import { diskCacheEnabled } from './chipMonitor.js';
 import { trackedFetch } from './serviceHealth.js';
 import { REQUEST_TIMEOUT_MS, yahooProxyUrl } from './yahooApi.js';
 
@@ -49,7 +50,7 @@ export function parseMisFutures(list) {
   const farPrice = num(far?.row.CLastPrice) || null;
   const price = num(row.CLastPrice);
   const prevClose = num(row.CRefPrice);
-  if (price === null || price === 0) return { symbol: row.SymbolID, prevClose, price: null, farPrice };
+  if (price === null || price === 0) return { symbol: row.SymbolID, prevClose, price: null, farPrice, date: row.CDate };
   const change = prevClose !== null ? price - prevClose : num(row.CDiff);
   return {
     symbol: row.SymbolID,
@@ -61,8 +62,17 @@ export function parseMisFutures(list) {
     change,
     changePct: prevClose ? +((change / prevClose) * 100).toFixed(2) : num(row.CDiffRate),
     volume: num(row.CTotalVolume),
-    farPrice
+    farPrice,
+    date: row.CDate
   };
+}
+
+// 台指(全)＝前一晚夜盤＋日盤（開用夜盤開、高低取兩段、量相加）；新的夜盤開始後就是夜盤本身。
+export function mergeFullSession(day, night) {
+  if (night?.price == null) return day;
+  // MIS 夜盤的 CDate 是開盤那天：比日盤早一天＝今天日盤前的那一晚；同一天以後＝新的夜盤已開始。
+  if (!(day?.price != null && night.date < day.date)) return night;
+  return { ...day, open: night.open ?? day.open, high: Math.max(day.high, night.high), low: Math.min(day.low, night.low), volume: (day.volume || 0) + (night.volume || 0) };
 }
 
 export const fetchMisFutures = async (session = 'day') => parseMisFutures(await fetchProxy('taifex-mis', { kind: 'futures', session }));
@@ -120,7 +130,7 @@ export async function fetchIndexExtras() {
 }
 
 // 大盤每日成交金額（證交所，本月＋上月）：[{ date, amountYi }]。
-export const fetchMarketAmountHistory = async () => (await fetchProxy('twse-market-amount', {}, 30000))
+export const fetchMarketAmountHistory = async () => (await fetchProxy('twse-market-amount', diskCacheEnabled('twse') ? { disk: 1 } : {}, 30000))
   .map(([date, amount]) => ({ date, amountYi: amount / 1e8 }));
 
 // 期交所選擇權每日行情（收盤後用；代理只留 TXO 一般時段）。原始列交給 taifexOptions.parseTxoReport。

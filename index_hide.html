@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="./pages/page5/page5.css">
   <link rel="stylesheet" href="./pages/page6/page6.css">
   <link rel="stylesheet" href="./pages/page7/page7.css">
+  <link rel="stylesheet" href="./pages/page8/page8.css">
 </head>
 <body>
   <div class="shell">
@@ -25,7 +26,7 @@
     <header class="shell__header">
       <div class="shell__top">
         <h1 class="shell__title">Taiwan Stock Dashboard</h1>
-        <nav class="tabbar" aria-label="分頁（快捷鍵 1–7）">
+        <nav class="tabbar" aria-label="分頁（快捷鍵 1–8）">
           <button class="tabbar__tab" type="button" data-page="page1" title="PAGE 1 Futures Overview（快捷鍵 1）">1 期貨總覽</button>
           <button class="tabbar__tab" type="button" data-page="page2" title="PAGE 2 Market Temperature（快捷鍵 2）">2 台股溫度計</button>
           <button class="tabbar__tab" type="button" data-page="page3" title="PAGE 3 Watchlist Alerts（快捷鍵 3）">3 自選提醒</button>
@@ -33,6 +34,7 @@
           <button class="tabbar__tab" type="button" data-page="page5" title="PAGE 5 Stock Screener（快捷鍵 5）">5 選股</button>
           <button class="tabbar__tab" type="button" data-page="page6" title="PAGE 6 Market Map（快捷鍵 6）">6 市場地圖</button>
           <button class="tabbar__tab" type="button" data-page="page7" title="PAGE 7 Global Indices（快捷鍵 7）">7 全球指數</button>
+          <button class="tabbar__tab" type="button" data-page="page8" title="PAGE 8 Chips Monitor（快捷鍵 8）">8 籌碼監控</button>
         </nav>
       </div>
       <div class="shell__bar">
@@ -66,7 +68,9 @@
             <button class="shell-menu__item" type="button" id="dashboard-settings-export" title="把自選股、策略、篩選條件等所有設定存成一個檔案">設定備份</button>
             <button class="shell-menu__item" type="button" id="dashboard-settings-import" title="從備份檔還原所有設定">設定還原</button>
             <a class="shell-menu__item" href="./index.html">Data Lab</a>
-            <span class="shell-menu__hint">快捷鍵：1–7 切頁、R 手動更新</span>
+            <span class="shell-menu__hint" title="過去月份／日期的盤後資料不會再變，勾選的群組由本機代理存成檔案（bridges/.cache/），重開代理不必重抓">盤後資料存本機</span>
+            <div id="dashboard-disk-cache"></div>
+            <span class="shell-menu__hint">快捷鍵：1–8 切頁、R 手動更新</span>
           </div>
         </details>
       </div>

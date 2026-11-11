@@ -11,8 +11,9 @@ import {
 import { subscribeFeedTick, tickNow } from './feedClock.js';
 import { isDailyRefreshDue, isTwFuturesDaySession, isTwFuturesNightSession, isTwQuoteSession, isTwSpotSession } from './marketCalendar.js';
 import { brokerCandlesUrl, dateKeyFromUnix, fetchBrokerCandles, fetchBrokerQuote, fetchYahooCandles, isBridgeSource } from './marketSources.js';
+import { fetchChipMonitor, fetchIntradayAmount } from './chipMonitor.js';
 import { fetchCloseHistory, fetchLiveQuotes, fetchOtcCodes, summarizeBreadth } from './marketBreadth.js';
-import { fetchIndexExtras, fetchMarketAmountHistory, fetchMisFutures, fetchMisIndex, fetchMisOptions, fetchTaifexOptionsDaily } from './misQuotes.js';
+import { fetchIndexExtras, fetchMarketAmountHistory, fetchMisFutures, mergeFullSession, fetchMisIndex, fetchMisOptions, fetchTaifexOptionsDaily } from './misQuotes.js';
 import { evaluatePatterns, refreshPatternHistory } from './patternEngine.js';
 import { tickPriceSimulator } from './priceSimulator.js';
 import { TOP10_CODES } from './quoteUtils.js';
@@ -53,6 +54,8 @@ let instFailedAt = 0;
 let amountAt = 0;
 let amountFailedAt = 0;
 let breadthAt = 0;
+let chipsAt = 0;
+let chipsFailedAt = 0;
 // 寬度統計的名單與歷史收盤一天抓一次：{ date, otcCodes, closes }。
 let breadthBase = null;
 
@@ -170,8 +173,9 @@ async function refreshIndexExtras(source, force) {
   if (getDashboardDataSource() === source) store.set('indexExtras', { ...extras, updatedAt: Date.now() });
 }
 
-// 市場寬度（上市＋上櫃約 1900 檔）：盤中最多每分鐘一輪，盤外有資料就不再抓；名單與歷史收盤一天抓一次。上市名單等證交所盤後資料到了才算。
+// 市場寬度（上市＋上櫃約 1900 檔，只在 Page2 開著時抓）：盤中最多每分鐘一輪，盤外有資料就不再抓；名單與歷史收盤一天抓一次。上市名單等證交所盤後資料到了才算。
 async function refreshBreadth(source, force) {
+  if (store.peek('activePage') !== 'page2') return;
   const tseCodes = (store.peek('twseDaily')?.rows || []).map((row) => row.code).filter((code) => /^[1-9]\d{3}$/.test(code));
   if (!tseCodes.length) return;
   if (!force && (Date.now() - breadthAt < BREADTH_MIN_MS || (store.peek('marketBreadth') && !isTwQuoteSession()))) return;
@@ -186,6 +190,22 @@ async function refreshBreadth(source, force) {
   const live = await fetchLiveQuotes(symbols);
   const pick = (suffix) => symbols.filter((symbol) => symbol.endsWith(suffix)).map((symbol) => ({ ...live[symbol], closes: breadthBase.closes[symbol] }));
   if (getDashboardDataSource() === source) store.set('marketBreadth', { tse: summarizeBreadth(pick('.TW')), otc: summarizeBreadth(pick('.TWO')), updatedAt: Date.now() });
+}
+
+// Page8 籌碼監控（只在 Page8 開著時抓，不受資料來源限制）：盤後資料一天在收盤後更新、換天數立刻重抓；
+// 再補前一交易日的盤中累計成交金額（和今天同一時間比）。
+async function refreshChips(force) {
+  if (store.peek('activePage') !== 'page8') return;
+  const days = store.peek('chipDays');
+  if (!force && store.peek('chipMonitor')?.days === days && !isDailyRefreshDue(chipsAt, Date.now(), chipsFailedAt)) return;
+  chipsAt = Date.now();
+  chipsFailedAt = chipsAt;
+  const data = await fetchChipMonitor(days);
+  chipsFailedAt = 0;
+  if (store.peek('chipDays') === days) store.set('chipMonitor', data);
+  const today = dateKeyFromUnix(Math.floor(Date.now() / 1000));
+  const prevDate = data.amounts.map((row) => row.date).filter((date) => date < today).at(-1);
+  if (prevDate && store.peek('chipPrevIntraday')?.date !== prevDate) store.set('chipPrevIntraday', { date: prevDate, points: await fetchIntradayAmount(prevDate) });
 }
 
 // ---- 公開資料：證交所／期交所 MIS 補 Yahoo 沒有的加權成交金額、台指期、選擇權 ----
@@ -208,13 +228,12 @@ async function refreshMisIndex(source, force) {
   }
 }
 
-// 台指期近月：台指（日盤）＝日盤報價；台指(全)＝日盤時段用日盤，其他時段夜盤有成交就用夜盤。只在期貨交易時段輪詢。
+// 台指期近月：台指（日盤）＝日盤報價；台指(全)＝前一晚夜盤＋日盤（開用夜盤開、高低取兩段、量相加），夜盤開始後改用夜盤。只在期貨交易時段輪詢。
 async function refreshMisFutures(source, force) {
-  const daySession = isTwFuturesDaySession();
-  if (!force && !daySession && !isTwFuturesNightSession()) return;
-  const [day, night] = await Promise.all([fetchMisFutures('day'), daySession ? null : fetchMisFutures('night')]);
+  if (!force && !isTwFuturesDaySession() && !isTwFuturesNightSession()) return;
+  const [day, night] = await Promise.all([fetchMisFutures('day'), fetchMisFutures('night')]);
   if (getDashboardDataSource() !== source) return;
-  const full = !daySession && night?.price != null ? night : day;
+  const full = mergeFullSession(day, night);
   [['futuresDay', day], ['futuresFull', full]].forEach(([key, quote]) => {
     if (quote?.price == null) return;
     store.set(key, { ...store.get(key), ...quote, source: 'mis', sourceSymbol: quote.symbol, sourceUpdatedAt: Date.now() });
@@ -331,7 +350,8 @@ async function fetchAll(force) {
   const source = getDashboardDataSource();
   const jobs = [
     settle('證交所盤後資料', refreshTwseDaily(force)),
-    settle('型態提醒', refreshPatternHistory().then(evaluatePatterns))
+    settle('型態提醒', refreshPatternHistory().then(evaluatePatterns)),
+    settle('籌碼監控', refreshChips(force))
   ];
   if (source === 'mock') {
     tickPriceSimulator();
@@ -408,6 +428,12 @@ export function startMarketFeed() {
   // 自選股有增減時立刻補抓報價與日 K（盤外也要抓得到新加入的股票）；換選取個股時立刻抓它的 1 分 K。
   store.subscribe('watchlist', () => runTick(true));
   store.subscribe('optionsExpiry', publishOptionsChain);
+  // 切到 Page2／Page8 才抓市場寬度／籌碼；Page8 換天數立刻重抓。
+  store.subscribe('activePage', (page) => {
+    if (page === 'page2' && getDashboardDataSource() === 'yahoo') settle('市場寬度', refreshBreadth('yahoo', false));
+    if (page === 'page8') settle('籌碼監控', refreshChips(false));
+  });
+  store.subscribe('chipDays', () => settle('籌碼監控', refreshChips(true)));
   store.subscribe('selectedStock', () => {
     if (getDashboardDataSource() === 'yahoo') settle('Yahoo 選取個股 1 分 K', refreshSelectedIntraday(true));
   });

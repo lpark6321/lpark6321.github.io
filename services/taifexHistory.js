@@ -1,21 +1,12 @@
 // 期交所盤後資料（「公開資料」來源，經本機代理）：台指期歷史日 K（近月、日盤／全日盤）、三大法人持倉成本。
 // 解析與計算都是純函式（tests/ 直接測）；fetch* 經代理取資料。
-import { trackedFetch } from './serviceHealth.js';
-import { yahooProxyUrl } from './yahooApi.js';
+import { fetchProxy } from './chipMonitor.js';
 
 // 日 K 的時間用台北 09:00（和 Yahoo 日 K 一樣），dateKeyFromUnix 換回日期不會跨日。
 const dateToUnix = (iso) => Date.parse(`${iso}T01:00:00Z`) / 1000;
 
-async function fetchProxy(endpoint, params) {
-  const url = yahooProxyUrl(endpoint);
-  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
-  const response = await trackedFetch('proxy', url.toString(), { cache: 'no-store', signal: AbortSignal.timeout(60000) });
-  if (!response.ok) throw new Error(`${endpoint} HTTP ${response.status}`);
-  return response.json();
-}
-
 // 代理回傳的列：[日期, 契約月份, 'day'|'night', 開, 高, 低, 收, 量, 結算價]（夜盤列的日期是它所屬的交易日，即隔一個交易日）。
-export const fetchFuturesHistory = (months = 2) => fetchProxy('taifex-fut-history', { months });
+export const fetchFuturesHistory = (months = 2) => fetchProxy('taifex-fut-history', { months }, { disk: 'futures' });
 
 const toRow = ([date, contract, session, open, high, low, close, volume, settle]) => ({ date, contract, session, open, high, low, close, volume, settle });
 
@@ -62,9 +53,20 @@ export const INSTITUTIONS = { foreign: '外資', trust: '投信', dealer: '自�
 const POINT_VALUE = 200;
 
 // 代理回傳的列：[日期, 身份, 交易淨口數, 交易淨額(千元), 未平倉淨口數, 未平倉淨額(千元)]。
-export const fetchInstitutional = (days = 365) => fetchProxy('taifex-inst', { days });
+export const fetchInstitutional = (days = 365) => fetchProxy('taifex-inst', { days, commodity: 'TXF' }, { disk: 'institutional', timeout: 120000 });
 
-// 依日期逐日累計淨部位的平均成本（和玩股網「持倉成本」同一種概念，起算日不同數字會略有差異）：
+// 該日期所屬的結算月：月結算日（第三個星期三）當天起算到下次結算日前一天，回傳起算月份 'YYYY-MM'。
+// shortcut: 結算日遇假日順延沒處理，遇到時那一個月會差一天。
+export function settlementCycle(iso) {
+  const first = new Date(`${iso.slice(0, 7)}-01T00:00:00Z`);
+  const third = 15 + ((3 - first.getUTCDay() + 7) % 7);
+  if (Number(iso.slice(8, 10)) >= third) return iso.slice(0, 7);
+  first.setUTCMonth(first.getUTCMonth() - 1);
+  return first.toISOString().slice(0, 7);
+}
+
+// 依日期逐日累計淨部位的平均成本（玩股網「持倉成本」同一種概念）：每個結算月從結算日當天重新起算
+// （11/10 回推比對玩股網：從 10/21 結算日起算差 25 點，是兩個月內最接近的起算日）。
 // 每天的部位變化＝未平倉淨口數的變化，價格用當天淨交易的均價（淨額÷口數÷200；沒有淨交易用未平倉市值的均價）。
 // 同方向加碼→加權平均；減碼→成本不變；翻轉→新部位用當天價格。回傳每天 { date, netOI, change, cost, price }。
 export function buildPositionCost(raw, identity) {
@@ -76,7 +78,7 @@ export function buildPositionCost(raw, identity) {
     const oiPrice = netOI ? (netAmt * 1000) / (netOI * POINT_VALUE) : null;
     const tradePrice = tradeQty ? (tradeAmt * 1000) / (tradeQty * POINT_VALUE) : null;
     const price = tradePrice ?? oiPrice;
-    if (index === 0) {
+    if (index === 0 || settlementCycle(date) !== settlementCycle(rows[index - 1][0])) {
       pos = netOI;
       cost = oiPrice;
     } else {
