@@ -130,3 +130,39 @@
 }
 .shell-menu__item:hover { background: rgba(245, 200, 66, 0.12); color: var(--gold); }
 .shell-menu__hint { padding: 6px 10px; color: var(--text2); font-size: var(--fs-xs); }
+
+/* 通知中心（鈴鐺）：未讀數徽章疊在按鈕右上角，不佔寬度；下拉清單最新在前，太長就捲動。 */
+.shell-bell + .shell-menu { margin-left: 0; }
+.shell-bell > summary { position: relative; }
+.shell-bell__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+.shell-bell__panel { width: min(380px, calc(100vw - 24px)); }
+.shell-bell__head { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--border2); }
+.shell-bell__heading { flex: 1; padding: 6px 10px; color: var(--gold); font-size: var(--fs-sm); font-weight: 700; }
+.shell-bell__list { max-height: 60vh; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.shell-bell__item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text2);
+  font-size: var(--fs-sm);
+}
+.shell-bell__item.is-unread { color: var(--text); }
+.shell-bell__time { font-family: var(--font-mono); }
+.shell-bell__kind { color: var(--gold); }
+.shell-bell__text { overflow-wrap: anywhere; }
+.shell-bell__empty { padding: 10px; color: var(--text2); font-size: var(--fs-sm); }

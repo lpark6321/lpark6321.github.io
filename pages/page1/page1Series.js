@@ -1,5 +1,6 @@
-// Page1 的 K 線計算：台北時間拆解、交易時段分組、6 區走勢、振幅歷史與當月高低。
+// Page1 的 K 線計算：台北時間拆解、交易時段分組、6 區走勢、振幅統計、結算月 K 與比前一日的 K 棒顏色。
 import { TW_SESSIONS, minutesOf } from '../../services/marketCalendar.js';
+import { contractExpiry } from '../../services/taifexOptions.js';
 
 // 時段一律取自 marketCalendar，這裡只換算成「當日第幾分鐘」給 K 線分組用。
 const DAY_SESSION_START = minutesOf(TW_SESSIONS.futuresDay.open);
@@ -10,7 +11,7 @@ export const TAIEX_PLOT_START = minutesOf(TW_SESSIONS.spot.open);
 export const TAIEX_PLOT_END = minutesOf(TW_SESSIONS.spot.close);
 const S6_INTRADAY_TIMEFRAMES = new Set(['1m', '5m']);
 const S6_MIN_TREND_POINTS = 2;
-export const AMP_HISTORY_DAYS = 30;
+export const AMP_HISTORY_DAYS = 20;
 
 function taipeiTimeParts(time) {
   if (typeof time === 'string') {
@@ -91,21 +92,106 @@ function selectLatestTradingSessionRows(rows, timeframe) {
   return { rows: selected, sessionLabel: latest.session.label };
 }
 
-// 日 K 統計（Page1 1 區與 B 區）：近 30 日振幅、20 日均線（月成本）、前一個完整交易日的高低收（樞紐點用）。
+// 日 K 統計（Page1 1 區與 B 區）：近 20 日振幅、前一個完整交易日的高低收（樞紐點、比前一日 K 棒）；
+// rows（排好序的日 K）與 today 給 periodAmplitudes、settlementMonth 用。
 export function buildDailyStats(candles, now = Date.now()) {
   const rows = Array.isArray(candles)
     ? candles
       .filter((row) => [row.open, row.high, row.low, row.close].every((value) => Number.isFinite(Number(value))))
       .sort((a, b) => sortTimeForTrend(a.time, b.time))
     : [];
-  const closes = rows.map((row) => Number(row.close));
   const today = taipeiTimeParts(Math.floor(now / 1000))?.dateKey;
   const prev = rows.filter((row) => taipeiTimeParts(row.time)?.dateKey < today).at(-1);
   return {
+    rows,
+    today,
     ampHistory: buildAmpHistoryFromCandles(rows, 'D'),
-    ma20: closes.length >= 20 ? closes.slice(-20).reduce((sum, v) => sum + v, 0) / 20 : null,
     prevDay: prev ? { high: Number(prev.high), low: Number(prev.low), close: Number(prev.close) } : null
   };
+}
+
+// 振幅週期：日、週（週一為一週開始）、月（日曆月）。
+const PERIOD_KEY = {
+  D: (dateKey) => dateKey,
+  W: (dateKey) => {
+    const day = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+    return shiftDateKey(dateKey, -((day + 6) % 7));
+  },
+  M: (dateKey) => dateKey.slice(0, 7)
+};
+
+// 近 limit 個完整週期的振幅（高－低，不含目前這一期）與目前這一期的振幅（含 live 的盤中高低）。
+export function periodAmplitudes(rows, period, today, live, limit = AMP_HISTORY_DAYS) {
+  const keyOf = PERIOD_KEY[period] || PERIOD_KEY.D;
+  const currentKey = keyOf(today);
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = keyOf(taipeiTimeParts(row.time)?.dateKey || '');
+    const item = groups.get(key) || { high: -Infinity, low: Infinity };
+    item.high = Math.max(item.high, Number(row.high));
+    item.low = Math.min(item.low, Number(row.low));
+    groups.set(key, item);
+  });
+  const current = groups.get(currentKey) || { high: -Infinity, low: Infinity };
+  if (live && Number.isFinite(Number(live.high)) && Number.isFinite(Number(live.low))) {
+    current.high = Math.max(current.high, Number(live.high));
+    current.low = Math.min(current.low, Number(live.low));
+  }
+  const history = [...groups.entries()].filter(([key]) => key < currentKey).sort(([a], [b]) => a.localeCompare(b)).slice(-limit)
+    .map(([, item]) => item.high - item.low);
+  return { history, current: Number.isFinite(current.high - current.low) ? current.high - current.low : null };
+}
+
+// 期海任我行的振幅統計：最大、大大（高於平均者的平均）、平均、小小（低於平均者的平均）、最小。
+export function amplitudeStats(amps) {
+  if (!amps.length) return null;
+  const mean = (list) => (list.length ? list.reduce((sum, v) => sum + v, 0) / list.length : null);
+  const avg = mean(amps);
+  return {
+    max: Math.max(...amps),
+    big: mean(amps.filter((v) => v > avg)) ?? avg,
+    avg,
+    small: mean(amps.filter((v) => v < avg)) ?? avg,
+    min: Math.min(...amps)
+  };
+}
+
+// 結算月 K（期海任我行的「月成本」）：上一次月結算（第三個星期三）之後的開高低，月成本＝(最高＋最低)÷2。
+// 夜盤 K 棒的日期是它所屬的交易日（結算日 15:00 的夜盤算隔天），所以日盤、全日盤都從結算日的下一個交易日算起。
+// rows 是近月連續日 K；live 是今天盤中的報價（今天的日 K 還沒進歷史時補上）。
+export function settlementMonth(rows, today, live) {
+  const [year, month] = today.split('-').map(Number);
+  const expiries = [0, 1].map((back) => {
+    const date = new Date(Date.UTC(year, month - 1 - back, 1));
+    return contractExpiry(`${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}`);
+  });
+  const lastExpiry = expiries.find((date) => date < today);
+  const period = rows.filter((row) => {
+    const dateKey = taipeiTimeParts(row.time)?.dateKey;
+    return dateKey > lastExpiry && dateKey <= today;
+  });
+  const highs = period.map((row) => Number(row.high));
+  const lows = period.map((row) => Number(row.low));
+  const hasToday = period.some((row) => taipeiTimeParts(row.time)?.dateKey === today);
+  if (live && !hasToday && Number.isFinite(Number(live.high)) && Number.isFinite(Number(live.low))) {
+    highs.push(Number(live.high));
+    lows.push(Number(live.low));
+  }
+  if (!highs.length) return null;
+  const high = Math.max(...highs);
+  const low = Math.min(...lows);
+  return { since: shiftDateKey(lastExpiry, 1), open: Number(period[0]?.open ?? live?.open), high, low, cost: (high + low) / 2 };
+}
+
+// 與前一個交易日的日 K 比：高過高低不過低＝紅、高不過高低過低＝綠、都沒過＝黃、都過＝灰。
+export const COMPARE_COLORS = { red: '#f03a5f', green: '#1fd67a', yellow: '#f5c842', grey: '#8a93a6' };
+export function compareWithPrevDay(today, prev) {
+  if (!today || !prev) return null;
+  const higher = Number(today.high) > Number(prev.high);
+  const lower = Number(today.low) < Number(prev.low);
+  if (higher && !lower) return 'red';
+  if (!higher && lower) return 'green';
+  return higher ? 'grey' : 'yellow';
 }
 
 export function buildAmpHistoryFromCandles(candles, timeframe, limit = AMP_HISTORY_DAYS) {

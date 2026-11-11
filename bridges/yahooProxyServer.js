@@ -1,4 +1,4 @@
-// Local Yahoo + FinMind + TWSE OpenAPI + TWSE/TAIFEX MIS proxy for development.
+// Local Yahoo + FinMind + TWSE/TPEx OpenAPI + TWSE/TAIFEX MIS + TAIFEX download proxy for development.
 // Run with: node bridges/yahooProxyServer.js
 // Frontend calls this server instead of query1.finance.yahoo.com to avoid browser CORS blocks.
 const http = require('node:http');
@@ -262,7 +262,12 @@ async function handleFinMind(req, res, label, finmindUrl) {
 // 證交所 OpenAPI 盤後資料（Page5 選股）：沒有 CORS，經這裡轉送。資料一天才更新一次，快取 10 分鐘。
 const TWSE_DATASETS = {
   valuation: 'https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL',
-  daily: 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'
+  daily: 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL',
+  // 櫃買中心上櫃股票每日收盤行情（含今天的漲跌停價），約 1.4 萬列含權證，只留 4 碼普通股。
+  tpex: 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes'
+};
+const TWSE_FILTERS = {
+  tpex: (row) => /^[1-9]\d{3}$/.test(row.SecuritiesCompanyCode)
 };
 const TWSE_CACHE_MS = 10 * 60 * 1000;
 const twseCache = new Map();
@@ -278,8 +283,9 @@ async function handleTwse(res, dataset) {
     signal: AbortSignal.timeout(15000)
   });
   if (!response.ok) throw new Error(`TWSE ${dataset} HTTP ${response.status}`);
-  const payload = await response.json();
-  if (!Array.isArray(payload)) throw new Error(`TWSE ${dataset} returned no rows`);
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error(`TWSE ${dataset} returned no rows`);
+  const payload = TWSE_FILTERS[dataset] ? rows.filter(TWSE_FILTERS[dataset]) : rows;
   twseCache.set(dataset, { time: Date.now(), payload });
   sendJson(res, 200, payload);
 }
@@ -349,6 +355,152 @@ async function handleTaifexOptDaily(reqUrl, res) {
   sendJson(res, 200, taifexOptDaily.payload);
 }
 
+// ---- 期交所盤後下載（CSV，Big5）：台指期歷史日 K、三大法人期貨未平倉；證交所／櫃買／期交所的其他公開資料 ----
+
+const big5 = new TextDecoder('big5');
+const longCache = new Map();
+
+// 同一個 key 在 ttl 內共用結果（含進行中的請求）；失敗不快取。
+function cached(key, ttl, load) {
+  const item = longCache.get(key);
+  if (item && Date.now() - item.time <= ttl) return item.promise;
+  const promise = load();
+  longCache.set(key, { time: Date.now(), promise });
+  promise.catch(() => { if (longCache.get(key)?.promise === promise) longCache.delete(key); });
+  return promise;
+}
+
+// 期交所下載頁要 POST 表單＋Referer（沒帶會回「日期時間錯誤」的 HTML）；回傳 CSV 每列欄位陣列（不含表頭）。
+async function fetchTaifexCsv(path, form) {
+  const response = await fetch(`https://www.taifex.com.tw/cht/3/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT, Referer: `https://www.taifex.com.tw/cht/3/${path.replace(/Down$/, '')}` },
+    body: new URLSearchParams(form).toString(),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error(`TAIFEX ${path} HTTP ${response.status}`);
+  const text = big5.decode(Buffer.from(await response.arrayBuffer()));
+  if (/<html/i.test(text.slice(0, 200))) throw new Error(`TAIFEX ${path} returned HTML`);
+  return text.trim().split(/\r?\n/).slice(1).map((line) => line.split(',').map((cell) => cell.trim()));
+}
+
+const slashDate = (date) => `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+const isoDate = (text) => text.replaceAll('/', '-');
+const csvNum = (text) => (text === '' || text === '-' ? null : Number(text));
+
+// 台指期（TX）一個日曆月的日 K：[日期, 契約月份, 'day'|'night', 開, 高, 低, 收, 量, 結算價]，只留單一月份契約。
+// 期交所一次最多查約一個月，所以一月一請求；過去的月份不會再變，快取 12 小時，本月 30 分鐘。
+function taifexFuturesMonth(year, month) {
+  const now = new Date();
+  const current = year === now.getFullYear() && month === now.getMonth();
+  return cached(`fut:${year}-${month}`, current ? 30 * 60 * 1000 : 12 * 3600 * 1000, async () => {
+    const start = new Date(year, month, 1);
+    const end = current ? now : new Date(year, month + 1, 0);
+    const rows = await fetchTaifexCsv('futDataDown', {
+      down_type: '1', commodity_id: 'TX', commodity_id2: '', queryStartDate: slashDate(start), queryEndDate: slashDate(end)
+    });
+    return rows
+      .filter((cells) => cells[1] === 'TX' && /^\d{6}$/.test(cells[2]) && csvNum(cells[3]) !== null)
+      .map((cells) => [isoDate(cells[0]), cells[2], cells[17] === '盤後' ? 'night' : 'day', ...[3, 4, 5, 6, 9, 10].map((i) => csvNum(cells[i]))]);
+  });
+}
+
+// ?months=N（1~24，預設 2）：最近 N 個日曆月的台指期日 K，由舊到新。
+async function handleTaifexFutHistory(reqUrl, res) {
+  const months = Math.min(24, Math.max(1, Number(reqUrl.searchParams.get('months')) || 2));
+  const now = new Date();
+  const result = [];
+  // 逐月依序抓，不同時對期交所打太多請求。
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    result.push(...await taifexFuturesMonth(date.getFullYear(), date.getMonth()));
+  }
+  sendJson(res, 200, result);
+}
+
+const INST_NAMES = { 自營商: 'dealer', 投信: 'trust', 外資及陸資: 'foreign' };
+
+// 三大法人臺股期貨（TXF）每日交易與未平倉：[日期, 身份('foreign'|'trust'|'dealer'), 交易淨口數, 交易淨額(千元), 未平倉淨口數, 未平倉淨額(千元)]。
+// ?days=N（30~730，預設 365）；一次請求最多一年，超過就分段。盤後約 15:00 更新，快取 30 分鐘。
+async function handleTaifexInst(reqUrl, res) {
+  const days = Math.min(730, Math.max(30, Number(reqUrl.searchParams.get('days')) || 365));
+  const payload = await cached(`inst:${days}`, 30 * 60 * 1000, async () => {
+    const end = new Date();
+    const rows = [];
+    for (let from = days; from > 0; from -= 365) {
+      const start = new Date(end.getTime() - from * 86400000);
+      const stop = new Date(end.getTime() - Math.max(0, from - 364) * 86400000);
+      rows.push(...await fetchTaifexCsv('futContractsDateDown', { queryStartDate: slashDate(start), queryEndDate: slashDate(stop), commodityId: 'TXF' }));
+    }
+    const seen = new Set();
+    return rows
+      .filter((cells) => INST_NAMES[cells[2]])
+      .map((cells) => [isoDate(cells[0]), INST_NAMES[cells[2]], ...[7, 8, 13, 14].map((i) => csvNum(cells[i]))])
+      .filter((row) => !seen.has(`${row[0]}${row[1]}`) && seen.add(`${row[0]}${row[1]}`))
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  });
+  sendJson(res, 200, payload);
+}
+
+// 加權與櫃買指數即時（證交所 MIS getStockInfo）：z 現價、y 昨收、o/h/l 開高低。
+async function handleTwIndices(reqUrl, res) {
+  const json = await fetchJson(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw%7Cotc_o00.tw&json=1&delay=0&_=${Math.floor(Date.now() / CACHE_TTL_MS)}`);
+  sendJson(res, 200, (json.msgArray || []).map((row) => ({ ex: row.ex, name: row.n, price: row.z, prevClose: row.y, open: row.o, high: row.h, low: row.l, time: row.tlong })));
+}
+
+// 台指選擇權波動率指數（VIX）即時，快取 10 秒。
+async function handleTaifexVix(reqUrl, res) {
+  const payload = await cached('vix', 10000, async () => {
+    const response = await fetch('https://mis.taifex.com.tw/futures/api/getQuoteListVIX', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': USER_AGENT },
+      body: '{}',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    });
+    if (!response.ok) throw new Error(`TAIFEX VIX HTTP ${response.status}`);
+    const row = (await response.json()).RtData?.QuoteList?.[0];
+    if (!row) throw new Error('TAIFEX VIX returned no rows');
+    return { price: row.CLastPrice, prevClose: row.CRefPrice, open: row.COpenPrice, high: row.CHighPrice, low: row.CLowPrice, date: row.CDate, time: row.CTime };
+  });
+  sendJson(res, 200, payload);
+}
+
+// 證交所每日市場成交資訊（大盤成交金額）：本月與上月合併，[日期, 成交金額(元)]，快取 30 分鐘。
+async function handleTwseMarketAmount(reqUrl, res) {
+  const payload = await cached('fmtqik', 30 * 60 * 1000, async () => {
+    const now = new Date();
+    const months = [new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 1)];
+    const rows = [];
+    for (const date of months) {
+      const json = await fetchJson(`https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date=${slashDate(date).replaceAll('/', '')}&response=json`);
+      (json.data || []).forEach((cells) => {
+        const [roc, mm, dd] = String(cells[0]).split('/');
+        rows.push([`${Number(roc) + 1911}-${mm}-${dd}`, Number(String(cells[2]).replace(/,/g, ''))]);
+      });
+    }
+    return rows;
+  });
+  sendJson(res, 200, payload);
+}
+
+// Yahoo spark（只有收盤價的日線，一次最多 20 檔）：?symbols= 最多 200 檔，分批抓，每批快取 6 小時（市場寬度統計一天抓一次）。
+const SPARK_BATCH = 20;
+async function handleYahooSpark(reqUrl, res) {
+  const symbols = cleanSymbols(reqUrl.searchParams.get('symbols')).split(',').filter((symbol) => /^[\w.^=-]{1,20}$/.test(symbol));
+  const range = cleanEnum(reqUrl.searchParams.get('range'), ['3mo', '6mo', '1y'], '1y');
+  const batches = [];
+  for (let i = 0; i < symbols.length; i += SPARK_BATCH) batches.push(symbols.slice(i, i + SPARK_BATCH));
+  const result = {};
+  for (let i = 0; i < batches.length; i += 4) {
+    await Promise.all(batches.slice(i, i + 4).map(async (batch) => {
+      const json = await cached(`spark:${range}:${batch.join(',')}`, 6 * 3600 * 1000,
+        () => fetchYahooJson('/v8/finance/spark', { symbols: batch.join(','), range, interval: '1d' }));
+      Object.entries(json || {}).forEach(([symbol, row]) => { result[symbol] = { t: row.timestamp || [], c: row.close || [] }; });
+    }));
+  }
+  sendJson(res, 200, result);
+}
+
 const routes = {
   '/api/yahoo-quote': handleQuote,
   '/api/yahoo-chart': handleChart,
@@ -358,7 +510,14 @@ const routes = {
   '/api/twse-daily': (reqUrl, res) => handleTwse(res, 'daily'),
   '/api/twse-mis-index': handleTwseMisIndex,
   '/api/taifex-mis': handleTaifexMis,
-  '/api/taifex-opt-daily': handleTaifexOptDaily
+  '/api/taifex-opt-daily': handleTaifexOptDaily,
+  '/api/taifex-fut-history': handleTaifexFutHistory,
+  '/api/taifex-inst': handleTaifexInst,
+  '/api/taifex-vix': handleTaifexVix,
+  '/api/tw-indices': handleTwIndices,
+  '/api/tpex-daily': (reqUrl, res) => handleTwse(res, 'tpex'),
+  '/api/twse-market-amount': handleTwseMarketAmount,
+  '/api/yahoo-spark': handleYahooSpark
 };
 
 const server = http.createServer(async (req, res) => {
@@ -403,7 +562,14 @@ const server = http.createServer(async (req, res) => {
         '/api/twse-daily',
         '/api/twse-mis-index',
         '/api/taifex-mis?kind=futures|options&session=day|night',
-        '/api/taifex-opt-daily'
+        '/api/taifex-opt-daily',
+        '/api/taifex-fut-history?months=2',
+        '/api/taifex-inst?days=365',
+        '/api/taifex-vix',
+        '/api/tw-indices',
+        '/api/tpex-daily',
+        '/api/twse-market-amount',
+        '/api/yahoo-spark?symbols=2330.TW&range=1y'
       ]
     });
   } catch (error) {

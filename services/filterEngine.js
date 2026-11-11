@@ -1,16 +1,12 @@
 // 選股條件登錄表（Page5）：每個條件定義名稱、參數欄位與判斷函式；資料欄位來自證交所盤後資料（services/twseData.js）。
 // 新增條件只要在這裡加一筆，篩選面板會自動產生勾選框與參數欄位。缺資料的股票不符合條件（不當成 0）。
 // needsHistory 的條件要日 K（services/screenerHistory.js 抓），fn 第三個參數是依時間排序的日 K。
-import { bollinger, ema, kd, macd, sma } from './indicators.js';
+import {
+  bollingerEnterLowerHalf, bollingerEnterUpperHalf, closeAboveBollingerUpper, closeAboveEma, closeAboveSma,
+  closeBelowBollingerLower, kdGoldenCross, macdGoldenCross, volumeShrink, volumeSurge
+} from './technicalSignals.js';
 
 const has = (value) => value != null && Number.isFinite(Number(value));
-const isPeriod = (n) => Number.isInteger(n) && n >= 1;
-const closesOf = (candles) => candles.map((c) => c.close);
-// 由下往上穿越：前一根 a ≤ b、最後一根 a > b；任一值算不出來就不成立。
-const crossUp = (a, b) => {
-  const i = a.length - 1;
-  return i >= 1 && [a[i], b[i], a[i - 1], b[i - 1]].every(has) && a[i - 1] <= b[i - 1] && a[i] > b[i];
-};
 
 // 只有證交所當日量超過這個張數的股票才抓日 K；其餘一律不符合技術指標條件。
 export const HISTORY_MIN_VOLUME = 1000;
@@ -49,16 +45,13 @@ export const FILTER_REGISTRY = [
     ],
     fn: (stock, settings) => has(stock.changePct) && stock.changePct >= settings.changeMin && stock.changePct <= settings.changeMax
   },
-  // 以下都用最後一根日 K 判斷；Yahoo 還沒有今天這根時就用最近一根，不拿證交所今日資料去拼。
+  // 以下都用最後一根日 K 判斷（規則在 technicalSignals.js，與 Page3 型態提醒共用）；Yahoo 還沒有今天這根時就用最近一根，不拿證交所今日資料去拼。
   {
     id: 'kd_golden_cross',
     name: 'KD 黃金交叉',
     needsHistory: true,
     params: [{ key: 'kdKMax', label: 'K 值 ≤（100＝不限）', defaultValue: 100 }],
-    fn: (stock, settings, candles) => {
-      const { k, d } = kd(candles);
-      return crossUp(k, d) && k.at(-1) <= settings.kdKMax;
-    }
+    fn: (stock, settings, candles) => kdGoldenCross(candles, settings.kdKMax)
   },
   {
     id: 'macd_golden_cross',
@@ -69,12 +62,7 @@ export const FILTER_REGISTRY = [
       { key: 'macdSlow', label: '慢線', defaultValue: 26 },
       { key: 'macdSignal', label: '訊號', defaultValue: 9 }
     ],
-    fn: (stock, settings, candles) => {
-      const { macdFast: f, macdSlow: s, macdSignal: g } = settings;
-      if (![f, s, g].every(isPeriod) || f >= s) return false;
-      const { dif, signal } = macd(closesOf(candles), f, s, g);
-      return crossUp(dif, signal);
-    }
+    fn: (stock, settings, candles) => macdGoldenCross(candles, settings.macdFast, settings.macdSlow, settings.macdSignal)
   },
   {
     id: 'volume_surge',
@@ -85,35 +73,31 @@ export const FILTER_REGISTRY = [
       { key: 'volRatio', label: '倍數 ≥', defaultValue: 1.5 }
     ],
     // 均量取今日之前 N 天（不含今日），今日量與均量都用日 K 的量，單位一致。
-    fn: (stock, settings, candles) => {
-      const n = settings.volMaDays;
-      if (!isPeriod(n) || candles.length < n + 1) return false;
-      const avg = candles.slice(-n - 1, -1).reduce((sum, c) => sum + c.volume, 0) / n;
-      const today = candles.at(-1).volume;
-      return has(avg) && avg > 0 && has(today) && today >= avg * settings.volRatio;
-    }
+    fn: (stock, settings, candles) => volumeSurge(candles, settings.volMaDays, settings.volRatio)
+  },
+  {
+    id: 'volume_shrink',
+    name: '量縮（今日量 ≤ 均量 × 倍數）',
+    needsHistory: true,
+    params: [
+      { key: 'volShrinkDays', label: '均量天數', defaultValue: 5 },
+      { key: 'volShrinkRatio', label: '倍數 ≤', defaultValue: 0.5 }
+    ],
+    fn: (stock, settings, candles) => volumeShrink(candles, settings.volShrinkDays, settings.volShrinkRatio)
   },
   {
     id: 'above_sma',
     name: '站上 SMA',
     needsHistory: true,
     params: [{ key: 'smaDays', label: 'SMA 天數', defaultValue: 20 }],
-    fn: (stock, settings, candles) => {
-      if (!isPeriod(settings.smaDays)) return false;
-      const line = sma(closesOf(candles), settings.smaDays).at(-1);
-      return has(line) && candles.at(-1).close >= line;
-    }
+    fn: (stock, settings, candles) => closeAboveSma(candles, settings.smaDays)
   },
   {
     id: 'above_ema',
     name: '站上 EMA',
     needsHistory: true,
     params: [{ key: 'emaDays', label: 'EMA 天數', defaultValue: 20 }],
-    fn: (stock, settings, candles) => {
-      if (!isPeriod(settings.emaDays)) return false;
-      const line = ema(closesOf(candles), settings.emaDays).at(-1);
-      return has(line) && candles.at(-1).close >= line;
-    }
+    fn: (stock, settings, candles) => closeAboveEma(candles, settings.emaDays)
   },
   {
     id: 'bb_upper_break',
@@ -123,11 +107,7 @@ export const FILTER_REGISTRY = [
       { key: 'bbUpPeriod', label: '天數', defaultValue: 20 },
       { key: 'bbUpWidth', label: '標準差倍數', defaultValue: 2 }
     ],
-    fn: (stock, settings, candles) => {
-      if (!isPeriod(settings.bbUpPeriod)) return false;
-      const upper = bollinger(closesOf(candles), settings.bbUpPeriod, settings.bbUpWidth).upper.at(-1);
-      return has(upper) && candles.at(-1).close > upper;
-    }
+    fn: (stock, settings, candles) => closeAboveBollingerUpper(candles, settings.bbUpPeriod, settings.bbUpWidth)
   },
   {
     id: 'bb_lower_break',
@@ -137,11 +117,22 @@ export const FILTER_REGISTRY = [
       { key: 'bbLowPeriod', label: '天數', defaultValue: 20 },
       { key: 'bbLowWidth', label: '標準差倍數', defaultValue: 2 }
     ],
-    fn: (stock, settings, candles) => {
-      if (!isPeriod(settings.bbLowPeriod)) return false;
-      const lower = bollinger(closesOf(candles), settings.bbLowPeriod, settings.bbLowWidth).lower.at(-1);
-      return has(lower) && candles.at(-1).close < lower;
-    }
+    fn: (stock, settings, candles) => closeBelowBollingerLower(candles, settings.bbLowPeriod, settings.bbLowWidth)
+  },
+  // 中軌＝N 日均線，與標準差倍數無關，所以只有天數。
+  {
+    id: 'bb_enter_upper',
+    name: '布林進入上半（收盤由下站上中軌）',
+    needsHistory: true,
+    params: [{ key: 'bbMidUpPeriod', label: '天數', defaultValue: 20 }],
+    fn: (stock, settings, candles) => bollingerEnterUpperHalf(candles, settings.bbMidUpPeriod)
+  },
+  {
+    id: 'bb_enter_lower',
+    name: '布林進入下半（收盤由上跌破中軌）',
+    needsHistory: true,
+    params: [{ key: 'bbMidDownPeriod', label: '天數', defaultValue: 20 }],
+    fn: (stock, settings, candles) => bollingerEnterLowerHalf(candles, settings.bbMidDownPeriod)
   }
 ];
 
@@ -160,8 +151,11 @@ export function applyFilters(stocks, enabled, settings) {
 
 export const hasHistoryFilters = (enabled) => activeFilters(enabled, true).length > 0;
 
-// 值得抓日 K 的股票：當日量 > HISTORY_MIN_VOLUME 張。
-export const historyCandidates = (stocks) => stocks.filter((stock) => has(stock.volume) && stock.volume > HISTORY_MIN_VOLUME);
+// 值得抓日 K 的股票：當日量 > HISTORY_MIN_VOLUME 張，依成交量由大到小取前 cap 檔。
+export const historyCandidates = (stocks, cap = Infinity) => stocks
+  .filter((stock) => has(stock.volume) && stock.volume > HISTORY_MIN_VOLUME)
+  .sort((a, b) => b.volume - a.volume)
+  .slice(0, cap);
 
 // 套用需要日 K 的條件；candlesByCode 是 Map(code → 日 K)，沒日 K 或量不夠的股票不符合。
 export function applyHistoryFilters(stocks, enabled, settings, candlesByCode) {

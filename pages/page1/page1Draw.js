@@ -216,8 +216,9 @@ export function drawInfoCandle(canvas, payload) {
   ctx.lineTo(cx, y(payload.low));
   ctx.stroke();
 
+  // payload.bodyColor：「比前一日」模式指定的實體顏色；沒給就依收盤 ≥ 開盤分紅綠。
   const up = payload.close >= payload.open;
-  ctx.fillStyle = up ? '#f03a5f' : '#1fd67a';
+  ctx.fillStyle = payload.bodyColor || (up ? '#f03a5f' : '#1fd67a');
   ctx.fillRect(cx - bw / 2, Math.min(y(payload.open), y(payload.close)), bw, Math.max(3, Math.abs(y(payload.open) - y(payload.close))));
 
   const changeText = `${payload.change >= 0 ? '+' : ''}${payload.change.toFixed(0)}`;

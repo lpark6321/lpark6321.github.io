@@ -1,5 +1,5 @@
 // 主儀表板外殼（index_hide.html）：分頁路由、標頭的資料來源／更新頻率／手動更新、台股與期貨狀態倒數、
-// 提示（服務連不上、資料延遲、設定檔過期）、「⋯」選單（設定備份／還原）與鍵盤快捷鍵（1–7 切頁、R 手動更新）。
+// 提示（服務連不上、資料延遲、設定檔過期）、通知中心（鈴鐺）、「⋯」選單（設定備份／還原）與鍵盤快捷鍵（1–7 切頁、R 手動更新）。
 import {
   DASHBOARD_DATA_SOURCES,
   POLL_INTERVAL_OPTIONS,
@@ -27,6 +27,7 @@ import {
   isTwQuoteSession
 } from './services/marketCalendar.js';
 import { refreshMarketFeed, startMarketFeed } from './services/marketFeed.js';
+import { clearNotices, getNotices, markAllRead, pushNotice, subscribeNotices, unreadCount } from './services/notifications.js';
 import { SERVICE_LABELS, failingServices, subscribeHealth } from './services/serviceHealth.js';
 
 const app = document.getElementById('app');
@@ -174,10 +175,22 @@ function expectLiveData(source = getDashboardDataSource()) {
   return isTwQuoteSession() || ((info.futures || info.mis) && (isTwFuturesDaySession() || isTwFuturesNightSession()));
 }
 
+// 問題「開始」時記一則通知（持續中不重複記，恢復後再發生才再記）。
+const activeProblems = new Set();
+function trackProblem(id, active, notice) {
+  if (active && !activeProblems.has(id)) pushNotice(notice());
+  if (active) activeProblems.add(id);
+  else activeProblems.delete(id);
+}
+function trackProblems(failing) {
+  Object.keys(SERVICE_LABELS).forEach((name) => trackProblem(`conn|${name}`, failing.includes(name), () => ({ kind: 'connection', title: '連不上', body: SERVICE_LABELS[name] })));
+}
+
 function renderNotes() {
   // 券商橋接只有在選了橋接來源時才算數（切走之後舊的失敗不再提示）。
   const failing = failingServices().filter((name) => name !== 'bridge' || sourceInfo().bridge);
   const notes = [];
+  trackProblems(failing);
   if (failing.length) {
     const labels = failing.map((name) => (name === 'bridge' ? `${SERVICE_LABELS.bridge}（${new URL(sourceInfo().bridge).port}）` : SERVICE_LABELS[name]));
     notes.push(`連不上：${labels.join('、')}`);
@@ -185,7 +198,9 @@ function renderNotes() {
   }
   // 盤中超過更新頻率 3 倍沒有新資料就提示（例如來源卡住、代理沒回應但沒有斷線）。
   const lag = Date.now() - lastUpdatedAt;
-  if (expectLiveData() && Number.isFinite(lag) && lag > getPollIntervalSeconds() * 3000) notes.push(`資料延遲 ${Math.round(lag / 1000)} 秒`);
+  const delayed = expectLiveData() && Number.isFinite(lag) && lag > getPollIntervalSeconds() * 3000;
+  if (delayed) notes.push(`資料延遲 ${Math.round(lag / 1000)} 秒`);
+  trackProblem('delay', delayed, () => ({ kind: 'delay', title: '資料延遲', body: `超過 ${Math.round(lag / 1000)} 秒沒有新資料` }));
   if (!TW_HOLIDAY_YEARS.includes(taipeiYear())) notes.push(`休市表沒有 ${taipeiYear()} 年，需要重算設定檔（data/config/README.md）`);
   if (Date.now() - Date.parse(`${TAIEX_DATA_DATE}T00:00:00+08:00`) > WEIGHTS_STALE_MS) {
     notes.push(`加權權重資料 ${TAIEX_DATA_DATE} 已超過一個月，需要重算設定檔`);
@@ -195,9 +210,56 @@ function renderNotes() {
   healthStatus.hidden = !notes.length;
 }
 
+// ---- 通知中心（鈴鐺）：今天的型態提醒、資料延遲、連線問題；之後的大單提醒也用 pushNotice 送進來 ----
+
+const bell = document.getElementById('dashboard-notices');
+const bellBadge = document.getElementById('dashboard-notices-badge');
+const bellList = document.getElementById('dashboard-notices-list');
+const NOTICE_KIND_LABEL = { pattern: '型態', delay: '延遲', connection: '連線', bigOrder: '大單', info: '訊息' };
+const noticeTime = (at) => new Date(at).toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
+
+// 徽章每秒更新一次（跨日時通知清空，數字要跟著歸零）。
+function renderBellBadge() {
+  const count = unreadCount();
+  const text = count > 99 ? '99+' : String(count);
+  if (bellBadge.textContent !== text) bellBadge.textContent = text;
+  bellBadge.hidden = !count;
+}
+
+function renderBell() {
+  renderBellBadge();
+  if (!bell.open) return;
+  const items = getNotices();
+  bellList.innerHTML = items.length
+    ? items.map((item) => `<li class="shell-bell__item${item.read ? '' : ' is-unread'}"><span class="shell-bell__time">${esc(noticeTime(item.at))}</span><span class="shell-bell__kind">${esc(NOTICE_KIND_LABEL[item.kind] || item.kind)}</span><span class="shell-bell__text">${esc(item.title)}${item.body ? `：${esc(item.body)}` : ''}</span></li>`).join('')
+    : '<li class="shell-bell__empty">今天還沒有通知</li>';
+}
+
+bell.addEventListener('toggle', renderBell);
+document.addEventListener('click', (event) => {
+  if (bell.open && !bell.contains(event.target)) bell.open = false;
+});
+document.getElementById('dashboard-notices-read').addEventListener('click', () => markAllRead());
+document.getElementById('dashboard-notices-clear').addEventListener('click', () => clearNotices());
+subscribeNotices(renderBell);
+
+// 型態提醒：key 用日期＋代碼＋型態，重新整理後還原的同一則不會再記一次；舊的先記，最新的才會在最上面。
+const pushPatternNotices = (alerts) => [...alerts].reverse().forEach((alert) => pushNotice({
+  kind: 'pattern',
+  title: `${alert.code} ${alert.name || ''}`.trim(),
+  body: `${(alert.patterns || []).join('、')}（${alert.price}）`,
+  key: `pattern|${alert.date}|${alert.code}|${alert.patternId}`
+}));
+store.subscribe('patternAlerts', pushPatternNotices);
+pushPatternNotices(store.get('patternAlerts'));
+
 subscribeHealth(renderNotes);
-subscribeSecond(renderMarketStatus);
+subscribeSecond((now) => {
+  renderMarketStatus(now);
+  renderBellBadge();
+});
 renderMarketStatus();
+renderBell();
 
 // ---- 「⋯」選單：設定備份／還原（匯出所有瀏覽器設定成一個檔，還原後重新載入讓各頁重新讀取） ----
 

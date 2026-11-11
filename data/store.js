@@ -110,6 +110,12 @@ const state = {
   watchQuotes: {},
   productDaily: null,
   twseDaily: null,
+  // 公開資料來源（marketFeed 寫入）：三大法人持倉成本 { foreign|trust|dealer: [{ date, netOI, change, cost }] }、
+  // 櫃買指數與 VIX { otc, vix }、大盤每日成交金額 [{ date, amountYi }]、市場寬度 { tse, otc }。
+  institutional: null,
+  indexExtras: null,
+  marketAmountHistory: null,
+  marketBreadth: null,
   topStocks: TAIEX_TOP10.map(({ code, name, weightPct }) => ({ code, name, weightPct })),
   watchlist: loadRows('watchlist', sanitizeWatchlist, DEFAULT_WATCHLIST),
   watchGroups: loadRows('watchGroups', sanitizeGroups, DEFAULT_GROUPS),

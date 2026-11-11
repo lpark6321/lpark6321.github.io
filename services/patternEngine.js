@@ -2,17 +2,20 @@
 // 算技術指標後檢查使用者勾選的型態。沒有即時價時只用日 K 判斷。同一檔、同一型態一天只提醒一次。
 import { store } from '../data/store.js';
 import { loadSetting, saveSetting } from '../data/storage.js';
-import { bollinger, kd, macd, rsi, sma } from './indicators.js';
+import {
+  closeCrossAboveSma, kdGoldenCross, lowTouchesBollingerLower, macdGoldenCross, rsiCrossBelow, volumeSurge
+} from './technicalSignals.js';
 import { isDailyRefreshDue, isTwQuoteSession } from './marketCalendar.js';
 import { dateKeyFromUnix, fetchStockDaily } from './marketSources.js';
 import { hasValue, liveQuoteMap, stockName } from './quoteUtils.js';
 
+// condition(candles)：判斷規則都在 technicalSignals.js，與 Page5 選股共用。
 export const PATTERN_REGISTRY = [
   {
     id: 'ma20_breakout',
     name: '突破20日均線',
     category: '均線',
-    condition: (snap) => snap.price > snap.ma20 && snap.prevClose <= snap.ma20,
+    condition: (candles) => closeCrossAboveSma(candles, 20),
     severity: 'high',
     description: '收盤價由下向上穿越20日均線'
   },
@@ -20,7 +23,7 @@ export const PATTERN_REGISTRY = [
     id: 'kd_golden_cross',
     name: 'KD黃金交叉',
     category: 'KD',
-    condition: (snap) => snap.kd_k > snap.kd_d && snap.prev_kd_k <= snap.prev_kd_d,
+    condition: (candles) => kdGoldenCross(candles),
     severity: 'mid',
     description: 'K值由下向上穿越D值'
   },
@@ -28,7 +31,7 @@ export const PATTERN_REGISTRY = [
     id: 'vol_surge',
     name: '爆量 (>2x均量)',
     category: '成交量',
-    condition: (snap) => snap.vol > snap.volAvg20 * 2,
+    condition: (candles) => volumeSurge(candles, 20, 2),
     severity: 'mid',
     description: '當日成交量超過20日均量兩倍'
   },
@@ -36,7 +39,7 @@ export const PATTERN_REGISTRY = [
     id: 'rsi_oversold',
     name: 'RSI超賣反彈',
     category: 'RSI',
-    condition: (snap) => snap.rsi < 30 && snap.prev_rsi >= 30,
+    condition: (candles) => rsiCrossBelow(candles, 30),
     severity: 'high',
     description: 'RSI由超賣區(30以下)向上穿出'
   },
@@ -44,7 +47,7 @@ export const PATTERN_REGISTRY = [
     id: 'bb_lower_touch',
     name: '觸及布林下軌',
     category: '布林通道',
-    condition: (snap) => snap.low <= snap.lowerBB,
+    condition: (candles) => lowTouchesBollingerLower(candles),
     severity: 'low',
     description: '當日最低點觸及或跌破布林下軌'
   },
@@ -52,7 +55,7 @@ export const PATTERN_REGISTRY = [
     id: 'macd_golden_cross',
     name: 'MACD黃金交叉',
     category: 'MACD',
-    condition: (snap) => snap.macd > snap.macd_signal && snap.prev_macd <= snap.prev_macd_signal,
+    condition: (candles) => macdGoldenCross(candles),
     severity: 'mid',
     description: 'MACD線由下向上穿越Signal線'
   }
@@ -131,40 +134,6 @@ function withLiveBar(candles, quote) {
   return isTwQuoteSession() ? [...candles, { time: today, ...bar }] : candles;
 }
 
-// 最後一根的指標快照；任何一個值算不出來就回傳 null（不能拿 null 當 0 比較）。
-function snapshotOf(series) {
-  if (series.length < MIN_BARS) return null;
-  const i = series.length - 1;
-  const closes = series.map((row) => row.close);
-  const volumes = series.map((row) => row.volume || 0);
-  const ma20 = sma(closes, 20);
-  const { k, d } = kd(series);
-  const r = rsi(closes);
-  const bb = bollinger(closes);
-  const m = macd(closes);
-  const prevVolumes = volumes.slice(-21, -1);
-  const snap = {
-    price: closes[i],
-    prevClose: closes[i - 1],
-    low: series[i].low,
-    ma20: ma20[i],
-    kd_k: k[i],
-    kd_d: d[i],
-    prev_kd_k: k[i - 1],
-    prev_kd_d: d[i - 1],
-    vol: volumes[i],
-    volAvg20: prevVolumes.reduce((sum, v) => sum + v, 0) / prevVolumes.length,
-    rsi: r[i],
-    prev_rsi: r[i - 1],
-    lowerBB: bb.lower[i],
-    macd: m.dif[i],
-    macd_signal: m.signal[i],
-    prev_macd: m.dif[i - 1],
-    prev_macd_signal: m.signal[i - 1]
-  };
-  return Object.values(snap).every(Number.isFinite) ? snap : null;
-}
-
 export function isPatternNotifyEnabled() {
   // 舊版存的是 '1'／'0'（讀回來是數字 1／0）。
   return Boolean(loadSetting('patternNotify', false)) && globalThis.Notification?.permission === 'granted';
@@ -208,17 +177,21 @@ export function evaluatePatterns() {
     if (!candles?.length) return;
     // 模擬資料的價格不是真的，不拿來當「今天這一根」，只用日 K 判斷。
     const quote = quotes.get(code);
-    const snap = snapshotOf(withLiveBar(candles, quote?.source === 'mock' ? null : quote));
-    if (!snap) return;
+    const series = withLiveBar(candles, quote?.source === 'mock' ? null : quote);
+    if (series.length < MIN_BARS) return;
+    const price = series.at(-1).close;
+    const prevClose = series.at(-2).close;
+    // 價格不是數字就不判斷（不能拿 null 當 0 比較）。
+    if (!Number.isFinite(price) || !Number.isFinite(prevClose)) return;
     PATTERN_REGISTRY.forEach((pattern) => {
       const key = firedKey(today, code, pattern.id);
-      if (!enabled.has(pattern.id) || firedToday.has(key) || !pattern.condition(snap)) return;
+      if (!enabled.has(pattern.id) || firedToday.has(key) || !pattern.condition(series)) return;
       firedToday.add(key);
       fresh.push({
         code,
         name: stockName(code) || store.get('watchlist').find((row) => row.code === code)?.name || '',
-        price: +snap.price.toFixed(2),
-        changePct: +(((snap.price - snap.prevClose) / snap.prevClose) * 100).toFixed(2),
+        price: +price.toFixed(2),
+        changePct: +(((price - prevClose) / prevClose) * 100).toFixed(2),
         patterns: [pattern.name],
         patternId: pattern.id,
         severity: pattern.severity,

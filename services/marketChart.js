@@ -39,6 +39,18 @@ const VOLUME_ALERT_DAY_COLOR = 'rgba(245,200,66,.95)';
 const VOLUME_ALERT_AFTER_HOURS_COLOR = 'rgba(130,224,170,.95)';
 const DAY_VOLUME_REFERENCE = 1500;
 const AFTER_HOURS_VOLUME_REFERENCE = 400;
+// 大戶（三大法人）疊圖：成本線畫在價格上，多空差額（每日淨未平倉變化）畫在最下方；只有日 K 才有。
+const INST_COST_COLOR = '#f5a623';
+const INST_CHOICES = [
+  { value: '', label: '無' },
+  { value: 'foreign', label: '外資' },
+  { value: 'trust', label: '投信' },
+  { value: 'dealer', label: '自營商' }
+];
+const MARGINS = {
+  plain: { main: { top: 0.05, bottom: 0.18 }, volume: { top: 0.78, bottom: 0 } },
+  inst: { main: { top: 0.05, bottom: 0.34 }, volume: { top: 0.68, bottom: 0.18 }, diff: { top: 0.84, bottom: 0 } }
+};
 
 let lightweightPromise = null;
 
@@ -91,18 +103,21 @@ function createShell(container) {
         <button type="button" class="lc-chart__button">載入CSV</button>
         <input type="file" accept=".csv,text/csv" hidden>
         <span class="lc-chart__label">指標</span><select class="lc-chart__control" data-min-width="210"></select>
+        <span class="lc-chart__label" data-inst hidden>大戶</span><select class="lc-chart__control" data-min-width="92" data-inst hidden></select>
         <span class="lc-chart__status"></span>
       </div>
       <div class="lc-chart__area"><div class="lc-chart__canvas"></div><div class="lc-chart-legend"></div></div>
     </div>
   `;
   const root = container.firstElementChild;
-  const [symbolSelect, timeframeSelect, indicatorSelect] = root.querySelectorAll('select');
+  const [symbolSelect, timeframeSelect, indicatorSelect, instSelect] = root.querySelectorAll('select');
   return {
     root,
     symbolSelect,
     timeframeSelect,
     indicatorSelect,
+    instSelect,
+    instNodes: root.querySelectorAll('[data-inst]'),
     chartNode: root.querySelector('.lc-chart__canvas'),
     csvButton: root.querySelector('.lc-chart__button'),
     csvInput: root.querySelector('input[type="file"]'),
@@ -353,11 +368,20 @@ export async function mountMarketChart(container, options = {}) {
   let unsubscribeDataSource = null;
   let unsubscribeFeedTick = null;
   let unsubscribeLiveQuote = null;
+  let unsubscribeInstitutional = null;
+  // options.getInstitutional() 回傳 { foreign|trust|dealer: [{ date, netOI, change, cost }] }；沒給就不顯示「大戶」選單。
+  const hasInstitutional = typeof options.getInstitutional === 'function';
+  let activeInst = hasInstitutional ? (options.institution ?? 'foreign') : '';
+  let instByDate = new Map();
 
   useLiveFutureSymbol();
   fillSelect(shell.symbolSelect, symbols, activeSymbol);
   fillSelect(shell.timeframeSelect, timeframes, activeTimeframe);
   fillSelect(shell.indicatorSelect, indicators, activeIndicator);
+  if (hasInstitutional) {
+    shell.instNodes.forEach((node) => { node.hidden = false; });
+    fillSelect(shell.instSelect, INST_CHOICES, activeInst);
+  }
 
   const chart = LightweightCharts.createChart(shell.chartNode, {
     autoSize: true,
@@ -378,7 +402,7 @@ export async function mountMarketChart(container, options = {}) {
     },
     rightPriceScale: {
       borderColor: 'rgba(120,140,180,.28)',
-      scaleMargins: { top: 0.05, bottom: 0.18 }
+      scaleMargins: MARGINS.plain.main
     },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
   });
@@ -415,7 +439,22 @@ export async function mountMarketChart(container, options = {}) {
     lastValueVisible: true,
     priceLineVisible: true
   });
-  volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+  volumeSeries.priceScale().applyOptions({ scaleMargins: MARGINS.plain.volume });
+
+  const instCostSeries = chart.addLineSeries({
+    color: INST_COST_COLOR,
+    lineWidth: 2,
+    lastValueVisible: true,
+    priceLineVisible: false,
+    title: '大戶成本'
+  });
+  const instDiffSeries = chart.addHistogramSeries({
+    priceScaleId: 'inst',
+    lastValueVisible: true,
+    priceLineVisible: false,
+    title: '多空差額'
+  });
+  instDiffSeries.priceScale().applyOptions({ scaleMargins: MARGINS.inst.diff });
   // 盤中/盤後量參考線是台指期口數門檻，只在期貨商品顯示（見 drawCandles）。
   const volumeReferenceLines = [
     volumeSeries.createPriceLine({
@@ -497,12 +536,28 @@ export async function mountMarketChart(container, options = {}) {
     }
   }
 
-  // 把一組 K 線畫上圖：K 線、成交量、SMA、legend 與價格線。fit：切換商品/週期/來源後重設可視範圍。
+  // 大戶疊圖對齊到同一天的 K 棒時間（不另外加時間點，免得時間軸多出空白 K 棒）；非日 K 或選「無」就清掉。
+  function drawInstitutional() {
+    const series = activeInst && activeTimeframe === 'D' ? options.getInstitutional?.()?.[activeInst] || [] : [];
+    instByDate = new Map(series.map((row) => [row.date, row]));
+    const points = lastCandles.flatMap((candle) => {
+      const row = instByDate.get(dateKeyFromUnix(chartTimeToUnix(candle.time)));
+      return row ? [{ time: candle.time, row }] : [];
+    });
+    const margins = points.length ? MARGINS.inst : MARGINS.plain;
+    chart.priceScale('right').applyOptions({ scaleMargins: margins.main });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: margins.volume });
+    instCostSeries.setData(points.filter(({ row }) => Number.isFinite(row.cost)).map(({ time, row }) => ({ time, value: +row.cost.toFixed(0) })));
+    instDiffSeries.setData(points.map(({ time, row }) => ({ time, value: row.change, color: row.change >= 0 ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR })));
+  }
+
+  // 把一組 K 線畫上圖：K 線、成交量、SMA、大戶疊圖、legend 與價格線。fit：切換商品/週期/來源後重設可視範圍。
   function drawCandles(candles, { fit = false } = {}) {
     const isFuture = isFutureSymbolActive();
     lastCandles = candles;
     lastSmaData = applyCandles(candleSeries, volumeSeries, smaSeries, candles, isFuture);
     volumeReferenceLines.forEach((line) => line.applyOptions({ lineVisible: isFuture, axisLabelVisible: isFuture }));
+    drawInstitutional();
     if (fit) chart.timeScale().fitContent();
     updateLegend();
     syncPriceLines();
@@ -634,6 +689,11 @@ export async function mountMarketChart(container, options = {}) {
     const volumeRow = hasVolumeIndicator()
       ? `<div class="lc-chart-legend__row">成交量 <span style="color:${volumeAlertColor};">${formatVolume(candle.volume || 0)}</span>${volumeAlert ? ` <span style="color:${volumeAlertColor};">超過${volumeAlert.label} ${formatVolume(volumeAlert.value)}</span>` : ''}</div>`
       : '';
+    const inst = instByDate.get(dateKeyFromUnix(chartTimeToUnix(candle.time)));
+    const instLabel = INST_CHOICES.find((item) => item.value === activeInst)?.label;
+    const instRow = inst
+      ? `<div class="lc-chart-legend__row">${esc(instLabel)}成本 <span style="color:${INST_COST_COLOR};">${Number.isFinite(inst.cost) ? formatPrice(Math.round(inst.cost)) : '--'}</span> 淨未平倉 <span>${formatPrice(inst.netOI)}</span> 多空差額 <span style="color:${inst.change >= 0 ? UP_COLOR : DOWN_COLOR};">${inst.change >= 0 ? '+' : ''}${formatPrice(inst.change)}</span></div>`
+      : '';
     const smaRow = hasSmaIndicator()
       ? `<div class="lc-chart-legend__row">SMA ${SMA_PERIOD} close <span style="color:${SMA_COLOR};">${smaPoint ? formatPrice(smaPoint.value) : '--'}</span></div>`
       : '';
@@ -651,6 +711,7 @@ export async function mountMarketChart(container, options = {}) {
       ${selectedRow}
       ${volumeRow}
       ${smaRow}
+      ${instRow}
     `;
   }
 
@@ -774,6 +835,7 @@ export async function mountMarketChart(container, options = {}) {
     unsubscribeDataSource?.();
     unsubscribeFeedTick?.();
     unsubscribeLiveQuote?.();
+    unsubscribeInstitutional?.();
     chart.remove();
     shell.root.remove();
   }
@@ -853,6 +915,13 @@ export async function mountMarketChart(container, options = {}) {
     }
   });
 
+  shell.instSelect.addEventListener('change', () => {
+    activeInst = shell.instSelect.value;
+    fitSelectToText(shell.instSelect);
+    drawInstitutional();
+    updateLegend();
+  });
+
   shell.indicatorSelect.addEventListener('change', () => {
     activeIndicator = shell.indicatorSelect.value;
     fitSelectToText(shell.indicatorSelect);
@@ -868,6 +937,7 @@ export async function mountMarketChart(container, options = {}) {
   });
   unsubscribeFeedTick = subscribeFeedTick(pollLatest);
   unsubscribeLiveQuote = options.subscribeLiveQuote?.(applyLiveQuote) || null;
+  unsubscribeInstitutional = options.subscribeInstitutional?.(() => { drawInstitutional(); updateLegend(); }) || null;
 
   syncCsvControls();
   await loadInitialData();

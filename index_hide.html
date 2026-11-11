@@ -49,6 +49,17 @@
         <span class="shell-market" id="dashboard-market-status"></span>
         <span class="shell-market" id="dashboard-futures-status"></span>
         <span class="shell-health" id="dashboard-health" role="status" hidden></span>
+        <details class="shell-menu shell-bell" id="dashboard-notices">
+          <summary class="shell-refresh" title="今日通知" aria-label="今日通知">🔔<span class="shell-bell__badge" id="dashboard-notices-badge" hidden></span></summary>
+          <div class="shell-menu__list shell-bell__panel">
+            <div class="shell-bell__head">
+              <span class="shell-bell__heading">今日通知</span>
+              <button class="shell-menu__item" type="button" id="dashboard-notices-read">全部已讀</button>
+              <button class="shell-menu__item" type="button" id="dashboard-notices-clear">清除</button>
+            </div>
+            <ol class="shell-bell__list" id="dashboard-notices-list"></ol>
+          </div>
+        </details>
         <details class="shell-menu" id="dashboard-menu">
           <summary class="shell-refresh" title="更多">⋯</summary>
           <div class="shell-menu__list">

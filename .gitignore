@@ -365,3 +365,6 @@ FodyWeavers.xsd
 # VS Code Local History extension backups
 .history/
 tests/.browser-shots/
+
+# 忽略該資料夾裡的所有檔案
+ref/*

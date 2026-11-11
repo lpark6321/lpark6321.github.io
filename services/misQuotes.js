@@ -35,7 +35,7 @@ export const fetchMisIndex = async () => parseMisIndex(await fetchProxy('twse-mi
 
 const MONTH_LETTERS = 'ABCDEFGHIJKL';
 
-// 近月台指期：代號 TXF + 月份字母(A=1 月 … L=12 月) + 年尾數 + -F（日盤）或 -M（夜盤）；現貨列與價差單不算。
+// 近月台指期（farPrice＝次近月成交價，算近遠月價差）：代號 TXF + 月份字母(A=1 月 … L=12 月) + 年尾數 + -F（日盤）或 -M（夜盤）；現貨列與價差單不算。
 export function parseMisFutures(list) {
   const contracts = (list || [])
     .map((row) => ({ row, m: /^TXF([A-L])(\d)-[FM]$/.exec(row.SymbolID || '') }))
@@ -45,10 +45,11 @@ export function parseMisFutures(list) {
   // 年尾數 0 接在 9 之後（2029 → 2030）：差太多就加 10 年。
   const minOrder = Math.min(...contracts.map((c) => c.order));
   contracts.forEach((c) => { if (c.order - minOrder > 60) c.order -= 120; });
-  const { row } = contracts.sort((a, b) => a.order - b.order)[0];
+  const [{ row }, far] = contracts.sort((a, b) => a.order - b.order);
+  const farPrice = num(far?.row.CLastPrice) || null;
   const price = num(row.CLastPrice);
   const prevClose = num(row.CRefPrice);
-  if (price === null || price === 0) return { symbol: row.SymbolID, prevClose, price: null };
+  if (price === null || price === 0) return { symbol: row.SymbolID, prevClose, price: null, farPrice };
   const change = prevClose !== null ? price - prevClose : num(row.CDiff);
   return {
     symbol: row.SymbolID,
@@ -59,7 +60,8 @@ export function parseMisFutures(list) {
     prevClose,
     change,
     changePct: prevClose ? +((change / prevClose) * 100).toFixed(2) : num(row.CDiffRate),
-    volume: num(row.CTotalVolume)
+    volume: num(row.CTotalVolume),
+    farPrice
   };
 }
 
@@ -99,7 +101,27 @@ export function parseMisOptions(list, today = new Date()) {
   });
 }
 
-export const fetchMisOptions = async () => parseMisOptions(await fetchProxy('taifex-mis', { kind: 'options' }));
+export const fetchMisOptions = async (session = 'day') => parseMisOptions(await fetchProxy('taifex-mis', { kind: 'options', session }));
+
+// ---- 櫃買指數、台指 VIX、大盤每日成交金額 ----
+
+const quoteOf = (row) => {
+  const price = num(row?.price);
+  const prevClose = num(row?.prevClose);
+  if (price === null) return null;
+  const change = prevClose !== null ? price - prevClose : null;
+  return { price, prevClose, open: num(row.open), high: num(row.high), low: num(row.low), change, changePct: prevClose ? +((change / prevClose) * 100).toFixed(2) : null };
+};
+
+// { otc: 櫃買指數, vix: 台指 VIX }，各為 { price, prevClose, open, high, low, change, changePct } 或 null。
+export async function fetchIndexExtras() {
+  const [indices, vix] = await Promise.all([fetchProxy('tw-indices'), fetchProxy('taifex-vix')]);
+  return { otc: quoteOf(indices.find((row) => row.ex === 'otc')), vix: quoteOf(vix) };
+}
+
+// 大盤每日成交金額（證交所，本月＋上月）：[{ date, amountYi }]。
+export const fetchMarketAmountHistory = async () => (await fetchProxy('twse-market-amount', {}, 30000))
+  .map(([date, amount]) => ({ date, amountYi: amount / 1e8 }));
 
 // 期交所選擇權每日行情（收盤後用；代理只留 TXO 一般時段）。原始列交給 taifexOptions.parseTxoReport。
 export const fetchTaifexOptionsDaily = () => fetchProxy('taifex-opt-daily', {}, 30000);

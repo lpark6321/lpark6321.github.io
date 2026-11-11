@@ -1,4 +1,4 @@
-// Page1 的 1 區「台指綜合資訊」：商品切換（台指(全)／台指）、期貨開高低收、月成本、價差、多空關卡、振幅統計。
+// Page1 的 1 區「台指綜合資訊」：商品切換（台指(全)／台指／加權）、開高低、結算月成本、價差、多空關卡、振幅統計、三大法人持倉成本。
 // 版面在建立時畫好一次，之後 render() 只改數字、顏色與標籤，不重建 DOM（商品選項、關卡選單不會被換掉）。
 import { store } from '../../data/store.js';
 import { loadSetting, saveSetting } from '../../data/storage.js';
@@ -7,19 +7,29 @@ import { Panel } from '../../components/Panel.js';
 import { sourceInfo } from '../../services/dashboardDataSource.js';
 import { pivotLevels } from '../../services/indicators.js';
 import { fmtNum as n, hasValue, trendClass as c } from '../../services/quoteUtils.js';
+import { INSTITUTIONS } from '../../services/taifexHistory.js';
 import { drawInfoCandle } from './page1Draw.js';
-import { AMP_HISTORY_DAYS, buildDailyStats } from './page1Series.js';
+import { AMP_HISTORY_DAYS, COMPARE_COLORS, amplitudeStats, buildDailyStats, compareWithPrevDay, periodAmplitudes, settlementMonth } from './page1Series.js';
 
-// 多空關卡三種算法（存在瀏覽器）：樞紐點（昨日高低收）、振幅倍數（開盤 ± 30 日平均振幅 × 倍數）、固定點數（現價 ± 自訂點數）。
+// 多空關卡三種算法（存在瀏覽器）：樞紐點（昨日高低收）、振幅倍數（開盤 ± 20 日平均振幅 × 倍數）、固定點數（現價 ± 自訂點數）。
 const LEVEL_MODES = { pivot: '樞紐點', amplitude: '振幅倍數', fixed: '固定點數' };
 const AMP_MULTIPLIERS = [1.25, 1, 0.75, 0.5, 0.25];
 const DEFAULT_FIXED_POINTS = [280, 180, 100, 40, 10];
-const PRODUCTS = ['台指(全)', '台指'];
+const PRODUCTS = ['台指(全)', '台指', '加權'];
+const AMP_PERIODS = { D: '日', W: '週', M: '月' };
+const K_MODES = { change: 'K棒：漲跌', compare: 'K棒：比前日' };
+const COMPARE_TITLES = { red: '高過高、低不過低', green: '高不過高、低過低', yellow: '高不過高、低不過低', grey: '高過高、低過低' };
 
 function loadLevelSettings() {
   const saved = loadSetting('page1Levels') || {};
   const points = Array.isArray(saved.points) ? saved.points.map(Number).filter((v) => v > 0).slice(0, 5) : [];
   return { mode: LEVEL_MODES[saved.mode] ? saved.mode : 'fixed', points: points.length ? points : DEFAULT_FIXED_POINTS };
+}
+
+// 振幅週期與 K 棒顏色模式（存在瀏覽器）。
+function loadViewSettings() {
+  const saved = loadSetting('page1Info') || {};
+  return { ampPeriod: AMP_PERIODS[saved.ampPeriod] ? saved.ampPeriod : 'D', kMode: K_MODES[saved.kMode] ? saved.kMode : 'change' };
 }
 
 // 回傳 { upper, lower }，各為 [{ label, value }]（由遠到近／由近到遠）；缺資料的值是 null。
@@ -54,23 +64,24 @@ export function formatFuturesValue(value) {
   return hasValue(value) ? n(Math.round(Number(value)), 0) : '--';
 }
 
+const isIndexMode = (mode) => mode === '加權';
 const productStoreKey = (mode) => (TW_FUTURES_BY_LABEL[mode] || TW_FUTURES_BY_LABEL['台指(全)']).storeKey;
 
-// 只回傳真的來自期貨來源、開高低收昨收齊全的快照；沒有就回 null。
+// 只回傳開高低收昨收齊全的快照（期貨來自期貨來源；「加權」是加權指數報價）；沒有就回 null。
 export function getProductFuturesSnapshot(mode) {
-  const futures = store.get(productStoreKey(mode));
-  const usable = ['price', 'open', 'high', 'low', 'prevClose'].every((key) => futures?.[key] != null && Number.isFinite(Number(futures[key])));
-  return usable ? futures : null;
+  const quote = store.get(isIndexMode(mode) ? 'taiex' : productStoreKey(mode));
+  const usable = ['price', 'open', 'high', 'low', 'prevClose'].every((key) => quote?.[key] != null && Number.isFinite(Number(quote[key])));
+  return usable ? quote : null;
 }
 
-// 1 區與 B 區統計用的日 K：有期貨來源用目前商品的期貨日 K，只有 Yahoo 時是加權日 K（label 會標「加權」）。
+// 1 區與 B 區統計用的日 K：台指／台指(全) 用該商品的期貨日 K（沒有時退回加權日 K，label 會標「加權」）；「加權」用加權日 K。
 export function productDailyStats(mode) {
   const daily = store.get('productDaily');
-  const product = daily?.[productStoreKey(mode)] || daily?.index || null;
+  const product = (isIndexMode(mode) ? null : daily?.[productStoreKey(mode)]) || daily?.index || null;
   return { label: product?.label || '', ...buildDailyStats(product?.candles) };
 }
 
-const kv = (field, label = '') => `<div class="p1-kv"><span data-label="${field}">${label}</span><strong data-f="${field}"></strong></div>`;
+const kv = (field, label = '', title = '') => `<div class="p1-kv"${title ? ` title="${title}"` : ''}><span data-label="${field}">${label}</span><strong data-f="${field}"></strong></div>`;
 
 // onModeChange 在切換商品後呼叫（B 區「台指盤中資訊」要跟著換）。回傳 { root, render, mode(), destroy }。
 export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
@@ -84,11 +95,15 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
         <div class="p1-main-table">
           <div class="p1-kv p1-kv-current"><span data-label="price"></span><strong data-f="price"></strong></div>
           ${kv('open')}${kv('high')}${kv('low')}
-          <div class="p1-kv" title="20 日均線"><span data-label="ma20"></span><strong data-f="ma20"></strong></div>
+          <div class="p1-kv" data-cost-tip><span data-label="cost"></span><strong data-f="cost"></strong></div>
+          ${kv('contract', '合約高低', '目前結算月 K 的最高／最低')}
         </div>
-        <div class="p1-main-mini"><canvas class="p1-main-mini-canvas"></canvas></div>
+        <div class="p1-main-mini">
+          <canvas class="p1-main-mini-canvas"></canvas>
+          <select class="p1-k-mode" aria-label="K 棒顏色">${Object.entries(K_MODES).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select>
+        </div>
       </div>
-      ${kv('spread')}${kv('change')}
+      ${kv('spread')}${kv('farSpread', '近遠月價差', '次近月減近月')}
     </div>
     <div class="p1-side-levels">
       <div class="p1-levels-ctrl">
@@ -99,8 +114,12 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
       <div class="p1-block p1-block--green"><div class="p1-block-title">日空方關卡</div><div class="p1-level-rows" data-side="lower"></div></div>
     </div>
     <div class="p1-side-amp">
-      <div class="p1-block-title" data-label="ampTitle"></div>
-      <div class="p1-amp-list">${kv('ampMax', '最大振幅')}${kv('ampAvg', '平均振幅')}${kv('ampMin', '最小振幅')}${kv('ampToday', '本日振幅')}</div>
+      <div class="p1-block-title p1-amp-head"><span data-label="ampTitle"></span><span class="p1-amp-periods">${Object.entries(AMP_PERIODS).map(([value, label]) => `<button type="button" data-period="${value}">${label}</button>`).join('')}</span></div>
+      <div class="p1-amp-list">${kv('ampMax', '最大振幅')}${kv('ampBig', '大大振幅', '高於平均的那幾期再平均')}${kv('ampAvg', '平均振幅')}${kv('ampSmall', '小小振幅', '低於平均的那幾期再平均')}${kv('ampMin', '最小振幅')}${kv('ampToday')}</div>
+    </div>
+    <div class="p1-side-inst">
+      <div class="p1-block-title" title="期交所三大法人臺股期貨未平倉，近一年逐日累計的平均成本（自行計算，和玩股網的起算方式不同，數字會有差異）">三大法人持倉成本（淨口數）</div>
+      <div class="p1-amp-list">${Object.entries(INSTITUTIONS).map(([id, label]) => kv(`inst-${id}`, label)).join('')}</div>
     </div>
   `);
 
@@ -109,9 +128,14 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
   const labels = Object.fromEntries([...body.querySelectorAll('[data-label]')].map((el) => [el.dataset.label, el]));
   const levelRows = Object.fromEntries([...body.querySelectorAll('.p1-level-rows')].map((el) => [el.dataset.side, el]));
   const miniCanvas = body.querySelector('.p1-main-mini-canvas');
+  const costRow = body.querySelector('[data-cost-tip]');
+  const ampTodayRow = fields.ampToday.parentElement;
   const levelModeEl = body.querySelector('.p1-level-mode');
   const levelPointsEl = body.querySelector('.p1-level-points');
+  const kModeEl = body.querySelector('.p1-k-mode');
+  const periodButtons = [...body.querySelectorAll('.p1-amp-periods button')];
   const levelSettings = loadLevelSettings();
+  const view = loadViewSettings();
   let mode = PRODUCTS[0];
   let levelLabelsKey = '';
 
@@ -138,49 +162,75 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
     });
   };
 
+  // 振幅統計（期海任我行的算法）：本期振幅還小於最小振幅時標亮，表示振幅還沒被滿足、可能放大。
+  const renderAmplitude = (stats, quote) => {
+    const unit = AMP_PERIODS[view.ampPeriod];
+    const { history, current } = periodAmplitudes(stats.rows, view.ampPeriod, stats.today, quote);
+    const summary = amplitudeStats(history);
+    const text = (value) => (Number.isFinite(value) ? value.toFixed(0) : '--');
+    set(labels.ampTitle, `${isIndexMode(mode) || stats.label === '加權' ? '加權' : ''}${unit}振幅統計(近${AMP_HISTORY_DAYS}${unit})`);
+    set(labels.ampToday, `本${unit}振幅`);
+    set(fields.ampMax, text(summary?.max));
+    set(fields.ampBig, text(summary?.big));
+    set(fields.ampAvg, text(summary?.avg));
+    set(fields.ampSmall, text(summary?.small));
+    set(fields.ampMin, text(summary?.min));
+    set(fields.ampToday, text(current));
+    const unmet = summary && Number.isFinite(current) && current < summary.min;
+    ampTodayRow.classList.toggle('p1-amp-alert', Boolean(unmet));
+    ampTodayRow.title = unmet ? `本${unit}振幅還小於近 ${AMP_HISTORY_DAYS} ${unit}最小振幅：振幅未滿足，可能放大` : '';
+    periodButtons.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.period === view.ampPeriod));
+  };
+
+  const renderInstitutional = () => {
+    const data = store.get('institutional');
+    Object.keys(INSTITUTIONS).forEach((id) => {
+      const last = data?.[id]?.at(-1);
+      set(fields[`inst-${id}`], last ? `${formatFuturesValue(last.cost)} (${last.netOI > 0 ? '+' : ''}${n(last.netOI, 0)})` : '--', last ? c(last.netOI) : '');
+    });
+  };
+
   const render = () => {
     const taiex = store.get('taiex');
-    const futures = getProductFuturesSnapshot(mode);
+    const index = isIndexMode(mode);
+    const quote = getProductFuturesSnapshot(mode);
     const stats = productDailyStats(mode);
-    // 沒有期貨來源時全部顯示 '--'，不拿加權指數頂替期貨價；整塊灰掉並說明。
-    const chg = futures ? futures.price - futures.prevClose : null;
-    const chgPct = futures?.prevClose ? (chg / futures.prevClose) * 100 : 0;
-    const spread = futures && hasValue(taiex.price) ? futures.price - taiex.price : null;
+    // 沒有期貨來源時期貨商品全部顯示 '--'，不拿加權指數頂替期貨價；整塊灰掉並說明。
+    const chg = quote ? quote.price - quote.prevClose : null;
+    const chgPct = quote?.prevClose ? (chg / quote.prevClose) * 100 : 0;
+    const spread = !index && quote && hasValue(taiex.price) ? quote.price - taiex.price : null;
+    const farSpread = !index && quote && hasValue(quote.farPrice) ? quote.farPrice - quote.price : null;
     const info = sourceInfo();
-    panel.root.classList.toggle('is-unsupported', !(info.feed && (info.futures || info.mis)));
+    panel.root.classList.toggle('is-unsupported', !(info.feed && (index || info.futures || info.mis)));
 
-    const indexPrefix = stats.label === '加權' ? '加權' : '';
+    const month = stats.today ? settlementMonth(stats.rows, stats.today, quote) : null;
     set(labels.price, mode);
     set(labels.open, `${mode}開`);
     set(labels.high, `${mode}高`);
     set(labels.low, `${mode}低`);
-    set(labels.ma20, `${indexPrefix}月成本`);
-    set(labels.spread, `${mode}加權價差`);
-    set(labels.change, `${mode}近月漲跌`);
-    set(fields.price, formatFuturesValue(futures?.price), c(chg));
-    set(fields.open, formatFuturesValue(futures?.open));
-    set(fields.high, formatFuturesValue(futures?.high));
-    set(fields.low, formatFuturesValue(futures?.low));
-    set(fields.ma20, formatFuturesValue(stats.ma20));
+    set(labels.cost, `${index || stats.label === '加權' ? '加權' : ''}月成本`);
+    set(labels.spread, index ? '期現價差' : `${mode}加權價差`);
+    set(fields.price, formatFuturesValue(quote?.price), c(chg));
+    set(fields.open, formatFuturesValue(quote?.open));
+    set(fields.high, formatFuturesValue(quote?.high));
+    set(fields.low, formatFuturesValue(quote?.low));
+    set(fields.cost, formatFuturesValue(month?.cost), month && quote ? c(quote.price - month.cost) : '');
+    set(fields.contract, month ? `${formatFuturesValue(month.high)}/${formatFuturesValue(month.low)}` : '--');
+    costRow.title = month ? `結算月 K（${month.since} 起）開 ${formatFuturesValue(month.open)}、高 ${formatFuturesValue(month.high)}、低 ${formatFuturesValue(month.low)}；月成本＝(高＋低)÷2` : '結算月 K 的 (最高＋最低)÷2';
     set(fields.spread, Number.isFinite(spread) ? spread.toFixed(2) : '--', c(spread));
-    set(fields.change, formatFuturesValue(chg), c(chg));
+    set(fields.farSpread, Number.isFinite(farSpread) ? formatFuturesValue(farSpread) : '--', c(farSpread));
 
-    if (futures) {
-      drawInfoCandle(miniCanvas, { open: futures.open, close: futures.price, high: futures.high, low: futures.low, prevClose: futures.prevClose, change: chg, ampPct: chgPct });
+    if (quote) {
+      const compare = view.kMode === 'compare' ? compareWithPrevDay(quote, stats.prevDay) : null;
+      miniCanvas.title = compare ? `比前一日：${COMPARE_TITLES[compare]}` : '';
+      drawInfoCandle(miniCanvas, { open: quote.open, close: quote.price, high: quote.high, low: quote.low, prevClose: quote.prevClose, change: chg, ampPct: chgPct, bodyColor: compare ? COMPARE_COLORS[compare] : null });
     } else {
       miniCanvas.getContext('2d')?.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
     }
 
-    renderLevels(computeLevels(levelSettings, futures, stats));
-
-    // 振幅統計由 marketFeed 抓的日 K 算出（不跟 C 區圖表綁定）；還沒有資料顯示 '--'。
-    const amps = stats.ampHistory.map((row) => Number(row.amplitude)).filter(Number.isFinite);
-    const ampText = (value) => (amps.length && Number.isFinite(value) ? value.toFixed(0) : '--');
-    set(labels.ampTitle, `${indexPrefix}日振幅統計(近${AMP_HISTORY_DAYS}日)`);
-    set(fields.ampMax, ampText(Math.max(...amps)));
-    set(fields.ampAvg, ampText(amps.reduce((sum, value) => sum + value, 0) / amps.length));
-    set(fields.ampMin, ampText(Math.min(...amps)));
-    set(fields.ampToday, futures ? Math.abs(futures.high - futures.low).toFixed(0) : '--');
+    renderLevels(computeLevels(levelSettings, quote, stats));
+    renderAmplitude(stats, quote);
+    renderInstitutional();
   };
 
   body.querySelectorAll('input[name="p1-product"]').forEach((el) => el.addEventListener('change', () => {
@@ -189,15 +239,21 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
     onModeChange(mode);
   }));
 
-  // 關卡算法切換與固定點數設定：改了就存到瀏覽器並重畫。
-  const syncLevelControls = () => {
+  // 關卡算法、振幅週期、K 棒顏色：改了就存到瀏覽器並重畫。
+  const syncControls = () => {
     levelModeEl.value = levelSettings.mode;
     levelPointsEl.value = levelSettings.points.join(',');
     levelPointsEl.hidden = levelSettings.mode !== 'fixed';
+    kModeEl.value = view.kMode;
   };
   const saveLevels = () => {
     saveSetting('page1Levels', levelSettings);
-    syncLevelControls();
+    syncControls();
+    render();
+  };
+  const saveView = () => {
+    saveSetting('page1Info', view);
+    syncControls();
     render();
   };
   levelModeEl.addEventListener('change', () => {
@@ -209,7 +265,15 @@ export function createInfoPanel(host, { onModeChange = () => {} } = {}) {
     if (points.length) levelSettings.points = points;
     saveLevels();
   });
-  syncLevelControls();
+  kModeEl.addEventListener('change', () => {
+    view.kMode = kModeEl.value;
+    saveView();
+  });
+  periodButtons.forEach((btn) => btn.addEventListener('click', () => {
+    view.ampPeriod = btn.dataset.period;
+    saveView();
+  }));
+  syncControls();
 
   return { root: panel.root, render, mode: () => mode, destroy: () => panel.destroy() };
 }

@@ -11,10 +11,12 @@ import {
 import { subscribeFeedTick, tickNow } from './feedClock.js';
 import { isDailyRefreshDue, isTwFuturesDaySession, isTwFuturesNightSession, isTwQuoteSession, isTwSpotSession } from './marketCalendar.js';
 import { brokerCandlesUrl, dateKeyFromUnix, fetchBrokerCandles, fetchBrokerQuote, fetchYahooCandles, isBridgeSource } from './marketSources.js';
-import { fetchMisFutures, fetchMisIndex, fetchMisOptions, fetchTaifexOptionsDaily } from './misQuotes.js';
+import { fetchCloseHistory, fetchLiveQuotes, fetchOtcCodes, summarizeBreadth } from './marketBreadth.js';
+import { fetchIndexExtras, fetchMarketAmountHistory, fetchMisFutures, fetchMisIndex, fetchMisOptions, fetchTaifexOptionsDaily } from './misQuotes.js';
 import { evaluatePatterns, refreshPatternHistory } from './patternEngine.js';
 import { tickPriceSimulator } from './priceSimulator.js';
 import { TOP10_CODES } from './quoteUtils.js';
+import { INSTITUTIONS, buildFuturesDaily, buildPositionCost, fetchFuturesHistory, fetchInstitutional } from './taifexHistory.js';
 import { buildChain, listExpiries, parseTxoReport, pickExpiry } from './taifexOptions.js';
 import { fetchTwseDaily } from './twseData.js';
 import { updateYahooGlobalQuotes } from './yahooGlobalQuotes.js';
@@ -28,8 +30,12 @@ const OPTIONS_IDLE_MS = 10 * 60 * 1000;
 // 由「資料來源」寫入的 store 鍵，切換來源時清空。證交所盤後資料與型態提醒不受來源限制，不在這裡。
 const SOURCE_KEYS = [
   'taiex', 'futuresDay', 'futuresFull', 'topStocks', 'marketMap', 'globalIndices',
-  'taiexIntraday', 'stockTrends', 'selectedIntraday', 'watchQuotes', 'productDaily', 'optionsChain'
+  'taiexIntraday', 'stockTrends', 'selectedIntraday', 'watchQuotes', 'productDaily', 'optionsChain',
+  'institutional', 'indexExtras', 'marketAmountHistory', 'marketBreadth'
 ];
+// 台指期歷史日 K 抓 24 個月：週／月振幅統計要 20 週、20 個月。
+const FUTURES_HISTORY_MONTHS = 24;
+const BREADTH_MIN_MS = 60000;
 
 let started = false;
 let busy = 0;
@@ -42,6 +48,13 @@ let twseFailedAt = 0;
 let optionsAt = 0;
 let optionsRows = [];
 let optionsOrigin = null;
+let instAt = 0;
+let instFailedAt = 0;
+let amountAt = 0;
+let amountFailedAt = 0;
+let breadthAt = 0;
+// 寬度統計的名單與歷史收盤一天抓一次：{ date, otcCodes, closes }。
+let breadthBase = null;
 
 // 失敗只記 log、回傳 false，不讓單一來源的錯誤擋住同一輪的其他請求。
 const settle = (label, promise) => promise.then(() => true, (error) => {
@@ -98,7 +111,8 @@ async function refreshSelectedIntraday(force) {
   if (getDashboardDataSource() === 'yahoo' && store.get('selectedStock') === code) store.set('selectedIntraday', { code, candles });
 }
 
-// Page1 統計（30 日振幅、20 日均線月成本、樞紐點）用的日 K：有期貨來源抓兩個台指商品，只有 Yahoo 抓加權。一天抓一次。
+// Page1 統計（振幅、樞紐點、比前一日 K 棒）用的日 K，一天抓一次。券商橋接：兩個台指商品；
+// 公開資料：期交所台指期歷史（近月日盤／全日盤）＋Yahoo 加權日 K。
 async function refreshProductDaily(source, force) {
   if (!force && !isDailyRefreshDue(productDailyAt, Date.now(), productDailyFailedAt)) return;
   productDailyAt = Date.now();
@@ -110,7 +124,11 @@ async function refreshProductDaily(source, force) {
       next[product.storeKey] = { label: product.label, source, candles: await fetchBrokerCandles({ brokerUrl, symbol: product.symbol, timeframe: 'D' }) };
     }));
   } else {
-    next.index = { label: '加權', source, candles: await fetchYahooCandles({ symbol: SPOT_SYMBOL, timeframe: 'D' }) };
+    const [raw, index] = await Promise.all([fetchFuturesHistory(FUTURES_HISTORY_MONTHS), fetchYahooCandles({ symbol: SPOT_SYMBOL, timeframe: 'D' })]);
+    TW_FUTURES_PRODUCTS.forEach((product) => {
+      next[product.storeKey] = { label: product.label, source, candles: buildFuturesDaily(raw, product.session) };
+    });
+    next.index = { label: '加權', source, candles: index };
   }
   productDailyFailedAt = 0;
   if (getDashboardDataSource() === source) store.set('productDaily', next);
@@ -123,6 +141,51 @@ async function refreshTwseDaily(force) {
   twseFailedAt = twseAt;
   store.set('twseDaily', await fetchTwseDaily());
   twseFailedAt = 0;
+}
+
+// 三大法人臺股期貨持倉成本與未平倉（期交所盤後，約 15:00 更新）：一天在收盤後更新。
+async function refreshInstitutional(source, force) {
+  if (!force && !isDailyRefreshDue(instAt, Date.now(), instFailedAt)) return;
+  instAt = Date.now();
+  instFailedAt = instAt;
+  const raw = await fetchInstitutional(365);
+  instFailedAt = 0;
+  if (getDashboardDataSource() === source) store.set('institutional', Object.fromEntries(Object.keys(INSTITUTIONS).map((id) => [id, buildPositionCost(raw, id)])));
+}
+
+// 大盤每日成交金額（20 日均量用），一天更新一次。
+async function refreshMarketAmount(source, force) {
+  if (!force && !isDailyRefreshDue(amountAt, Date.now(), amountFailedAt)) return;
+  amountAt = Date.now();
+  amountFailedAt = amountAt;
+  const rows = await fetchMarketAmountHistory();
+  amountFailedAt = 0;
+  if (getDashboardDataSource() === source) store.set('marketAmountHistory', rows);
+}
+
+// 櫃買指數、台指 VIX：盤中每輪；盤外已有資料就不抓。
+async function refreshIndexExtras(source, force) {
+  if (!force && !isTwQuoteSession() && store.get('indexExtras')) return;
+  const extras = await fetchIndexExtras();
+  if (getDashboardDataSource() === source) store.set('indexExtras', { ...extras, updatedAt: Date.now() });
+}
+
+// 市場寬度（上市＋上櫃約 1900 檔）：盤中最多每分鐘一輪，盤外有資料就不再抓；名單與歷史收盤一天抓一次。上市名單等證交所盤後資料到了才算。
+async function refreshBreadth(source, force) {
+  const tseCodes = (store.peek('twseDaily')?.rows || []).map((row) => row.code).filter((code) => /^[1-9]\d{3}$/.test(code));
+  if (!tseCodes.length) return;
+  if (!force && (Date.now() - breadthAt < BREADTH_MIN_MS || (store.peek('marketBreadth') && !isTwQuoteSession()))) return;
+  breadthAt = Date.now();
+  const today = dateKeyFromUnix(Math.floor(Date.now() / 1000));
+  if (breadthBase?.date !== today) {
+    const otcCodes = await fetchOtcCodes();
+    const symbols = [...tseCodes.map((code) => `${code}.TW`), ...otcCodes.map((code) => `${code}.TWO`)];
+    breadthBase = { date: today, otcCodes, closes: await fetchCloseHistory(symbols, today) };
+  }
+  const symbols = [...tseCodes.map((code) => `${code}.TW`), ...breadthBase.otcCodes.map((code) => `${code}.TWO`)];
+  const live = await fetchLiveQuotes(symbols);
+  const pick = (suffix) => symbols.filter((symbol) => symbol.endsWith(suffix)).map((symbol) => ({ ...live[symbol], closes: breadthBase.closes[symbol] }));
+  if (getDashboardDataSource() === source) store.set('marketBreadth', { tse: summarizeBreadth(pick('.TW')), otc: summarizeBreadth(pick('.TWO')), updatedAt: Date.now() });
 }
 
 // ---- 公開資料：證交所／期交所 MIS 補 Yahoo 沒有的加權成交金額、台指期、選擇權 ----
@@ -158,13 +221,15 @@ async function refreshMisFutures(source, force) {
   });
 }
 
-// 選擇權鏈：日盤看期交所 MIS 的成交價；盤外 MIS 還留著當天成交就繼續用，清空了（隔天開盤前）才改讀期交所盤後檔。
+// 選擇權鏈：日盤看期交所 MIS 日盤、夜盤看夜盤的成交價；其他時段 MIS 還留著當天成交就繼續用，清空了（隔天開盤前）才改讀期交所盤後檔。
 async function refreshOptions(source, force) {
-  const live = isTwFuturesDaySession();
+  const night = isTwFuturesNightSession();
+  const live = isTwFuturesDaySession() || night;
   if (!force && Date.now() - optionsAt < (live ? OPTIONS_LIVE_MS : OPTIONS_IDLE_MS)) return;
   optionsAt = Date.now();
-  let rows = await fetchMisOptions();
-  let origin = { kind: 'mis' };
+  const session = night ? 'night' : 'day';
+  let rows = await fetchMisOptions(session);
+  let origin = { kind: 'mis', session };
   if (!live && !rows.some((row) => row.volume > 0)) {
     const daily = await fetchTaifexOptionsDaily();
     rows = parseTxoReport(daily);
@@ -280,7 +345,11 @@ async function fetchAll(force) {
       settle('期交所選擇權', refreshOptions(source, force)),
       settle('Yahoo 個股 1 分 K', refreshStockTrends(force)),
       settle('Yahoo 選取個股 1 分 K', refreshSelectedIntraday(force)),
-      settle('Yahoo 加權日 K', refreshProductDaily(source, force))
+      settle('期交所台指期與 Yahoo 加權日 K', refreshProductDaily(source, force)),
+      settle('期交所三大法人', refreshInstitutional(source, force)),
+      settle('證交所大盤成交金額', refreshMarketAmount(source, force)),
+      settle('櫃買指數與 VIX', refreshIndexExtras(source, force)),
+      settle('市場寬度', refreshBreadth(source, force))
     );
   } else if (isBridgeSource(source)) {
     const brokerUrl = brokerCandlesUrl(source);
@@ -311,6 +380,11 @@ function resetSourceData() {
   productDailyAt = 0;
   productDailyFailedAt = 0;
   optionsAt = 0;
+  instAt = 0;
+  instFailedAt = 0;
+  amountAt = 0;
+  amountFailedAt = 0;
+  breadthAt = 0;
   optionsRows = [];
   optionsOrigin = null;
   store.reset(...SOURCE_KEYS);

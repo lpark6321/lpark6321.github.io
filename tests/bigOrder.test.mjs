@@ -38,8 +38,8 @@ assert.deepEqual(
   { kind: 'stock', code: '2330', side: '外盤', volume: 499, price: 2400, time: t0 }
 );
 
-// 期貨一分鐘量：跨分鐘分開累加、每分鐘只提醒一次、未達門檻不提醒
-const fut = big.createMinuteVolumeTracker(1500);
+// 期貨一分鐘量：跨分鐘分開累加、每分鐘只提醒一次、未達門檻不提醒（日盤門檻 1500）
+const fut = big.createMinuteVolumeTracker();
 assert.equal(fut.push({ time: t0 + 5, volume: 800 }), null);
 assert.equal(fut.push({ time: t0 + 65, volume: 900 }), null); // 10:32，不與 10:31 合併
 const hit = fut.push({ time: t0 + 50, volume: 899 }); // 10:31 累計 1699
@@ -52,3 +52,14 @@ assert.equal(fut.push({ time: t0 + 59, volume: 500 }), null); // 同分鐘已提
 const next = fut.push({ time: t0 + 100, volume: 600 }); // 10:32 累計 1500
 assert.equal(next.minute, '10:32');
 assert.equal(next.volume, 1500);
+
+// 日夜盤門檻依該筆時間判斷：台北 21:00 夜盤 400 口、凌晨 04:59 仍屬夜盤、10:31 日盤 1500 口
+const night = Date.UTC(2026, 10, 5, 13, 0) / 1000; // 台北週四 21:00
+assert.equal(big.futuresMinuteThreshold(night), 400);
+assert.equal(big.futuresMinuteThreshold(Date.UTC(2026, 10, 5, 20, 59) / 1000), 400); // 台北週五 04:59
+assert.equal(big.futuresMinuteThreshold(t0), 1500);
+const nightFut = big.createMinuteVolumeTracker();
+assert.equal(nightFut.push({ time: night, volume: 399 }), null);
+assert.equal(nightFut.push({ time: night + 10, volume: 1 }).volume, 400);
+// 自訂門檻
+assert.equal(big.createMinuteVolumeTracker({ day: 10, night: 5 }).push({ time: night, volume: 5 }).volume, 5);

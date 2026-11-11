@@ -196,3 +196,12 @@
   .p2-bottom { grid-column: 1 / -1; grid-row: 3; }
   .p2-gauge-wrap { max-width: 420px; margin: 0 auto; }
 }
+
+/* 1 區市場概況：盤面摘要、上市／上櫃漲跌停分布、創高低家數、站上均線家數 */
+.p2-overview { margin-top: 10px; }
+.p2-flow-row small { font-size: var(--fs-xs); margin-left: 4px; }
+.p2-ov-title { font-weight: 700; color: var(--gold); margin: 10px 0 4px; }
+.p2-ov-dist { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center; font-size: var(--fs-sm); }
+.p2-ov-dist b { display: block; font-family: JetBrains Mono; font-size: var(--fs-base); }
+.p2-ov-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin-top: 6px; font-size: var(--fs-sm); }
+.p2-ov-grid span:nth-child(even) { text-align: right; font-family: JetBrains Mono; }

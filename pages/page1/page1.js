@@ -14,12 +14,14 @@ import { isTwFuturesDaySession, isTwFuturesNightSession, isTwSpotSession } from 
 import {
   TOP10_CODES,
   fmtNum as n,
+  liveMarketMapQuotes,
   liveQuoteMap,
   orDash,
   pctFromPrevClose,
   trendClass as c
 } from '../../services/quoteUtils.js';
 import { getDashboardDataSource, subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
+import { indexContributions, recentAverage } from '../../services/marketOverview.js';
 import { drawAmp20, drawMonitor, drawTrend } from './page1Draw.js';
 import { createInfoPanel, formatFuturesValue, getProductFuturesSnapshot, productDailyStats } from './page1Info.js';
 import { buildChartTrendSeries } from './page1Series.js';
@@ -82,23 +84,23 @@ const B_TABS = [
   { key: 'intraday', label: '台指盤中資訊' },
   { key: 'watch', label: '自選股' },
   { key: 'volume', label: '大盤預估量' },
-  { key: 'amp30', label: '30日振幅變化' }
+  { key: 'amp30', label: '振幅變化' }
 ];
 
 // 各區塊依賴的 store 鍵：只有相關鍵變動才重畫該區塊（B 區再依目前分頁細分）。
 const FUTURES_KEYS = ['futuresDay', 'futuresFull'];
 const QUOTE_KEYS = ['watchlist', 'topStocks', 'marketMap', 'watchQuotes'];
 const SECTION_DEPS = {
-  left: ['taiex', 'productDaily', ...FUTURES_KEYS],
+  left: ['taiex', 'productDaily', 'institutional', ...FUTURES_KEYS],
   trend: ['taiex', 'taiexIntraday'],
   group: [...QUOTE_KEYS, 'stockTrends'],
   monitor: QUOTE_KEYS
 };
 const B_TAB_DEPS = {
   weighted: ['topStocks', 'stockTrends'],
-  intraday: ['taiex', ...FUTURES_KEYS],
+  intraday: ['taiex', 'marketMap', ...FUTURES_KEYS],
   watch: QUOTE_KEYS,
-  volume: ['taiex'],
+  volume: ['taiex', 'marketAmountHistory'],
   amp30: ['productDaily']
 };
 const WATCHED_KEYS = [...new Set([...Object.values(SECTION_DEPS), ...Object.values(B_TAB_DEPS)].flat())];
@@ -310,7 +312,12 @@ export function mount(container) {
     intraday: (box, fresh) => {
       const mode = infoPanel.mode();
       if (fresh) {
-        box.innerHTML = `<div class="p1-rows">${['加權 開/高/低', '加權 現/漲跌', '', ''].map((label) => `<div class="p1-row"><span>${label}</span><strong></strong></div>`).join('')}</div>`;
+        box.innerHTML = `
+          <div class="p1-rows">${['加權 開/高/低', '加權 現/漲跌', '', ''].map((label) => `<div class="p1-row"><span>${label}</span><strong></strong></div>`).join('')}</div>
+          <div class="p1-contrib" title="個股對加權指數的貢獻點數＝權重 × 漲跌幅 × 加權昨收（權重取設定檔，僅供參考）">
+            <div><div class="p1-contrib__title">上漲貢獻（點）</div><div class="p1-contrib__list" data-side="up"></div></div>
+            <div><div class="p1-contrib__title">下跌貢獻（點）</div><div class="p1-contrib__list" data-side="down"></div></div>
+          </div>`;
       }
       const t = store.get('taiex');
       const f = getProductFuturesSnapshot(mode) || {};
@@ -323,6 +330,11 @@ export function mount(container) {
         [`${mode} 現/漲跌`, `${fv(f.price)} / ${fv(f.change)}`, c(f.change)]
       ];
       values.forEach(([label, text, cls], i) => patchRow(rows[i], label, text, cls));
+      // 股名來自名單設定檔，仍一律 esc()。
+      const contributions = indexContributions(liveMarketMapQuotes().values(), t.prevClose);
+      const list = (rowsOf) => rowsOf.map((row) => `<div class="p1-row"><span>${esc(row.code)} ${esc(row.name)} <em class="${c(row.changePct)}">${row.changePct > 0 ? '+' : ''}${row.changePct.toFixed(2)}%</em></span><strong class="${c(row.points)}">${row.points > 0 ? '+' : ''}${row.points.toFixed(2)}</strong></div>`).join('') || '<div class="p1-row"><span>--</span></div>';
+      box.querySelector('[data-side="up"]').innerHTML = list(contributions.filter((row) => row.points > 0).slice(0, 8));
+      box.querySelector('[data-side="down"]').innerHTML = list(contributions.filter((row) => row.points < 0).reverse().slice(0, 8));
     },
     watch: (box, fresh) => {
       const w = store.get('watchlist');
@@ -348,6 +360,8 @@ export function mount(container) {
             <div class="p1-row"><span>預估成交量</span><strong></strong></div>
             <div class="p1-volume-bar"><div class="p1-volume-bar__fill"></div></div>
             <div class="p1-row"><span>達成率</span><strong></strong></div>
+            <div class="p1-row"><span>20 日均量(億)</span><strong></strong></div>
+            <div class="p1-row"><span>預估量／20 日均量</span><strong></strong></div>
           </div>
         `;
       }
@@ -362,6 +376,12 @@ export function mount(container) {
       patchRow(rows[0], null, currentVolume > 0 ? n(currentVolume, 0) : '--', '');
       patchRow(rows[1], null, Number.isFinite(estimatedVolume) ? n(estimatedVolume, 0) : '--', '');
       patchRow(rows[2], null, ratio == null ? '--' : `${ratio.toFixed(2)}%`, '');
+      // 20 日均量：證交所每日成交金額（億），不含今天。
+      const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      const avg20 = recentAverage((store.get('marketAmountHistory') || []).filter((row) => row.date < today).map((row) => row.amountYi));
+      patchRow(rows[3], null, avg20 == null ? '--' : n(avg20, 0), '');
+      const vsAvg = avg20 && Number.isFinite(estimatedVolume) ? (estimatedVolume / avg20) * 100 : null;
+      patchRow(rows[4], null, vsAvg == null ? '--' : `${vsAvg.toFixed(0)}%`, vsAvg == null ? '' : c(vsAvg - 100));
       box.querySelector('.p1-volume-bar__fill').style.width = `${ratio == null ? 0 : Math.min(100, Math.max(0, ratio))}%`;
     },
     amp30: (box, fresh) => {
@@ -422,7 +442,10 @@ export function mount(container) {
     symbol: 'INDEX:TWII',
     timeframe: 'D',
     getLiveQuote: chartLiveQuote,
-    subscribeLiveQuote: subscribeChartLiveQuote
+    subscribeLiveQuote: subscribeChartLiveQuote,
+    // 大戶成本線與多空差額：期交所三大法人（marketFeed 寫入 institutional）。
+    getInstitutional: () => store.get('institutional'),
+    subscribeInstitutional: (callback) => store.subscribe('institutional', callback)
   };
 
   let stopLightweightChart = () => {};

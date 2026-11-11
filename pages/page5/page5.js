@@ -1,6 +1,7 @@
 // Page5 策略選股：用證交所盤後資料（store.twseDaily，由 marketFeed 每天收盤後抓）篩選上市股票。
 // 這是盤後資料，不受右上角「資料來源」限制；只有技術指標條件要日 K，限公開資料（yahoo）來源。
 import { store, isValidStockCode, sanitizeWatchlist } from '../../data/store.js';
+import { loadSetting, saveSetting } from '../../data/storage.js';
 import { applyFilters, applyHistoryFilters, hasHistoryFilters, historyCandidates } from '../../services/filterEngine.js';
 import { loadScreenerCandles, screenerHistoryAvailable } from '../../services/screenerHistory.js';
 import { subscribeDashboardDataSource } from '../../services/dashboardDataSource.js';
@@ -17,10 +18,14 @@ const CSV_COLUMNS = [
   ['dividendYield', '殖利率%'], ['pb', '股價淨值比'], ['volume', '成交量(張)']
 ];
 
+// 技術指標要抓日 K 的檔數上限（依成交量取前 N 檔），0＝全部。
+const HISTORY_CAPS = [50, 100, 200, 500, 0];
+const DEFAULT_HISTORY_CAP = 100;
+
 // mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
-    <div class="page-topbar"><h2>PAGE 5｜策略選股 <span class="badge badge--mid" id="p5-data-date">證交所資料載入中</span></h2><span class="p5-topbar-tools"><span id="p5-note" class="p5-note"></span><button id="p5-export" type="button" title="匯出目前篩選結果（全部頁）">匯出 CSV</button></span></div>
+    <div class="page-topbar"><h2>PAGE 5｜策略選股 <span class="badge badge--mid" id="p5-data-date">證交所資料載入中</span></h2><span class="p5-topbar-tools"><span id="p5-note" class="p5-note"></span><label class="p5-cap" title="技術指標條件只抓成交量最大的前 N 檔日 K">日 K 上限 <select id="p5-cap">${HISTORY_CAPS.map((n) => `<option value="${n}">${n ? `${n} 檔` : '全部'}</option>`).join('')}</select></label><button id="p5-export" type="button" title="匯出目前篩選結果（全部頁）">匯出 CSV</button></span></div>
     <div class="p5-grid" id="p5-grid">
       <aside id="p5-filters"></aside>
       <div class="grid-splitter-v p5-main-splitter" id="p5-main-split"></div>
@@ -34,6 +39,10 @@ export function mount(container) {
   const gridEl = container.querySelector('#p5-grid');
   const noteEl = container.querySelector('#p5-note');
   const dateEl = container.querySelector('#p5-data-date');
+  const capEl = container.querySelector('#p5-cap');
+  const savedCap = loadSetting('screenHistoryCap', DEFAULT_HISTORY_CAP);
+  capEl.value = String(HISTORY_CAPS.includes(savedCap) ? savedCap : DEFAULT_HISTORY_CAP);
+  capEl.addEventListener('change', () => saveSetting('screenHistoryCap', Number(capEl.value)));
   const stopMainSplit = bindCssVarSplitter(container.querySelector('#p5-main-split'), gridEl, '--p5-left-w', { fallback: 320, min: 260, max: 620 });
 
   // 只放行有效代碼，其餘告訴使用者被略過幾檔。
@@ -76,13 +85,15 @@ export function mount(container) {
     let note = '';
     if (hasHistoryFilters(enabled) && all.length) {
       if (fetchHistory) {
-        const codes = historyCandidates(matched).map((row) => row.code);
-        const candles = await loadScreenerCandles(codes, (done, total) => {
-          if (seq === runSeq) filter.showMessage(`抓日 K ${done}/${total}`);
+        const cap = Number(capEl.value) || Infinity;
+        const total = historyCandidates(matched).length;
+        const codes = historyCandidates(matched, cap).map((row) => row.code);
+        const candles = await loadScreenerCandles(codes, (done, due) => {
+          if (seq === runSeq) filter.showMessage(`抓日 K ${done}/${due}${total > codes.length ? `（依成交量取前 ${codes.length} 檔）` : ''}`);
         });
         if (seq !== runSeq) return;
         matched = applyHistoryFilters(matched, enabled, settings, candles);
-        note = `（日 K 檢查 ${codes.length} 檔）`;
+        note = total > codes.length ? `（日 K 依成交量取前 ${codes.length} 檔檢查，候選共 ${total} 檔）` : `（日 K 檢查 ${codes.length} 檔）`;
       } else {
         note = '（技術指標條件未套用，請按「執行篩選」）';
       }

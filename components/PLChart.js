@@ -5,22 +5,44 @@ import { fmtNum } from '../services/quoteUtils.js';
 
 export class PLChart {
   constructor(container, options = {}) {
-    this.options = { width: options.width || 740, height: options.height || 340 };
+    // 寬度跟著容器（ResizeObserver），高度固定。
+    this.options = { width: 0, height: options.height || 340 };
+    this.container = container;
     this.canvas = document.createElement('canvas');
-    this.canvas.style.width = `${this.options.width}px`;
-    this.canvas.style.height = `${this.options.height}px`;
-    this.ctx = setupHiDpiCanvas(this.canvas, this.options.width, this.options.height);
+    this.canvas.style.display = 'block';
     this.tooltip = document.createElement('div');
     this.tooltip.style.cssText = 'position:absolute;pointer-events:none;background:#111520;border:1px solid #263050;padding:4px 6px;font-size:12px;display:none';
     container.style.position = 'relative';
     container.appendChild(this.canvas);
     container.appendChild(this.tooltip);
     this.points = [];
+    this.legs = [];
+    this.spot = 19850;
+    this.resize();
     this.canvas.addEventListener('mousemove', (e) => this.onMove(e));
     this.canvas.addEventListener('mouseleave', () => (this.tooltip.style.display = 'none'));
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.resize()) this.update(this.legs, this.spot);
+    });
+    this.resizeObserver.observe(container);
+  }
+
+  // 依容器內容寬度重設畫布；寬度沒變回傳 false。
+  resize() {
+    const style = getComputedStyle(this.container);
+    const inner = this.container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const width = Math.max(120, Math.floor(inner) || 0);
+    if (width === this.options.width) return false;
+    this.options.width = width;
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${this.options.height}px`;
+    this.ctx = setupHiDpiCanvas(this.canvas, width, this.options.height);
+    return true;
   }
 
   update(legs = [], spot = 19850) {
+    this.legs = legs;
+    this.spot = spot;
     const ctx = this.ctx;
     const { width: w, height: h } = this.options;
     const { points, breakevens } = analyzeStrategy(legs, spot);
@@ -89,6 +111,7 @@ export class PLChart {
   }
 
   destroy() {
+    this.resizeObserver.disconnect();
     this.tooltip.remove();
     this.canvas.remove();
   }

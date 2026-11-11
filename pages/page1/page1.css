@@ -34,6 +34,9 @@
   grid-row: 1;
   min-height: 0;
   min-width: 0;
+  /* 標頭＋內容：內容只拿剩下的高度（以前內容 height:100% 會多出標頭那一截，把主圖時間軸擠出面板） */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .p1-bottom {
@@ -69,7 +72,6 @@
 .p1-mini-item { display: grid; grid-template-columns: 1fr 150px auto; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px; cursor: pointer; }
 .p1-cards { display: grid; grid-template-columns: repeat(10, minmax(120px, 1fr)); gap: 8px; overflow-x: auto; align-content: start; }
 .p1-tv {
-  height: 100%;
   min-height: 500px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -158,7 +160,8 @@
 
 .p1-side-table,
 .p1-side-levels,
-.p1-side-amp {
+.p1-side-amp,
+.p1-side-inst {
   background: #1a1f29;
   border: 1px solid #343b49;
   padding: 8px;
@@ -246,8 +249,9 @@
   padding: 0;
   min-height: 136px;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
 }
+.p1-k-mode { width: 100%; padding: 2px 4px; font-size: var(--fs-xs); border-radius: 0; }
 
 .p1-main-mini-canvas {
   width: 100%;
@@ -265,3 +269,20 @@
 .p1-mini-name, .p1-chart-error { color: var(--text2); }
 .p1-volume-bar { height: 14px; background: var(--border); border-radius: 999px; overflow: hidden; }
 .p1-volume-bar__fill { height: 100%; width: 0; background: var(--gold); }
+
+/* 振幅統計：標題列的日／週／月切換；本期振幅小於最小振幅時標亮 */
+.p1-amp-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.p1-amp-periods { display: inline-flex; gap: 2px; }
+.p1-amp-periods button { padding: 1px 6px; font-size: var(--fs-xs); }
+.p1-amp-periods button.is-active { border-color: var(--gold); color: var(--gold); }
+.p1-amp-list .p1-kv { padding-left: 6px; padding-right: 6px; }
+.p1-kv.p1-amp-alert { background: rgba(245, 200, 66, 0.22); }
+.p1-kv.p1-amp-alert strong { color: var(--gold); }
+
+/* B 區盤中資訊：個股貢獻點數（上漲／下跌各前 8 檔） */
+.p1-contrib { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+.p1-contrib__title { font-weight: 700; margin-bottom: 4px; color: var(--text2); }
+.p1-contrib__list { display: grid; gap: 4px; }
+.p1-contrib em { font-style: normal; margin-left: 4px; }
+
+.p1-kv strong[data-f="contract"] { white-space: nowrap; font-size: var(--fs-sm); }

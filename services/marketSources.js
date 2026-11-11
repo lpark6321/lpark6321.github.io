@@ -5,6 +5,7 @@ import { TW_FUTURES_BY_SYMBOL } from '../data/twDerivatives.js';
 import { sourceInfo } from './dashboardDataSource.js';
 import { TW_SESSIONS, isTwFuturesDaySession, minutesOf } from './marketCalendar.js';
 import { splitCsvLine } from './csv.js';
+import { buildFuturesDaily, fetchFuturesHistory } from './taifexHistory.js';
 import { REQUEST_TIMEOUT_MS, fetchYahooChart, yahooProxyUrl } from './yahooApi.js';
 
 // Yahoo 不同週期對應的 chart API interval/range；圖表內部統一轉成 OHLCV。
@@ -566,6 +567,11 @@ function generateFallbackCandles({ timeframe = 'D', base = 32000 }) {
 export async function fetchCandles(options) {
   const { source } = options;
   if (source === 'mock') return generateFallbackCandles(options);
+  // 公開資料的台指期只有期交所盤後日 K（Yahoo 沒有台指期）；分 K 要券商來源。
+  if (source === 'yahoo' && options.type === 'future') {
+    if (isIntradayTimeframe(options.timeframe)) throw new Error('公開資料只有台指期日 K');
+    return buildFuturesDaily(await fetchFuturesHistory(6), options.session);
+  }
   if (source === 'yahoo') return fetchYahooCandles(options);
   if (source === 'taifex_csv') return fetchTaifexCsvCandles(options);
   if (source === 'finmind') return fetchFinMindFuturesCandles(options);

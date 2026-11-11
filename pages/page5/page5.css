@@ -44,3 +44,4 @@
 
 /* 技術指標條件在不支援日 K 的資料來源下停用 */
 #p5-filters [data-history].is-disabled { opacity: 0.5; }
+.p5-cap { display: inline-flex; gap: 4px; align-items: center; color: var(--text2); white-space: nowrap; }

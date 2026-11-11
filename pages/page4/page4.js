@@ -6,6 +6,8 @@ import { GreeksTable } from '../../components/GreeksTable.js';
 import { ChainViewer } from '../../components/ChainViewer.js';
 import { bindCssVarSplitter } from '../../services/splitter.js';
 import { esc } from '../../services/html.js';
+import { loadSetting } from '../../data/storage.js';
+import { chainPrice } from '../../services/optionStrategy.js';
 
 const KIND_LABEL = { month: '月選', 'week-wed': '週三', 'week-fri': '週五' };
 
@@ -14,6 +16,19 @@ function originLabel(origin) {
   if (origin?.kind === 'mis') return '期交所即時（成交價）';
   if (origin?.kind === 'taifex-daily') return `期交所盤後 ${origin.date || ''}`;
   return '示範資料';
+}
+
+// 內建預設腳位（示範用）在拿到期交所真資料後換成「買進 1 口價平 Call」。
+// store 每次 set 腳位都會存到瀏覽器，所以「沒存過」＝使用者沒動過；瀏覽器不給存時靠 defaultReplaced 只換一次。
+let defaultReplaced = false;
+function replaceDefaultLeg(chainData) {
+  const real = ['mis', 'taifex-daily'].includes(chainData.origin?.kind);
+  if (defaultReplaced || !real || loadSetting('strategyLegs') !== null || !chainData.calls?.length) return;
+  const strike = chainData.calls.reduce((best, row) => (Math.abs(row.strike - chainData.spotPrice) < Math.abs(best - chainData.spotPrice) ? row.strike : best), chainData.calls[0].strike);
+  const premium = chainPrice(chainData, 'call', strike, 'buy');
+  if (premium === null) return;
+  defaultReplaced = true;
+  store.set('strategyLegs', [{ type: 'call', action: 'buy', strike, qty: 1, premium }]);
 }
 
 // mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
@@ -73,6 +88,7 @@ export function mount(container) {
 
   const render = () => {
     const chainData = store.get('optionsChain');
+    replaceDefaultLeg(chainData);
     renderExpiries(chainData);
     const legs = store.get('strategyLegs');
     chart.update(legs, chainData.spotPrice);

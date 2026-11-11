@@ -15,7 +15,7 @@ const LEGACY_KEYS = {
 };
 
 // 會進備份檔的設定（當日型態提醒這種資料不算設定，不備份）。
-export const BACKUP_KEYS = [...Object.keys(LEGACY_KEYS), 'watchGroups'];
+export const BACKUP_KEYS = [...Object.keys(LEGACY_KEYS), 'watchGroups', 'screenHistoryCap', 'page1Info'];
 const BACKUP_APP = 'gio-dashboard-settings';
 
 const storage = () => globalThis.localStorage;

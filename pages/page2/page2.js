@@ -9,6 +9,8 @@ import { TAIEX_BY_CODE, TAIEX_DATA_DATE } from '../../data/taiexWeightedConstitu
 import { TW50_BY_CODE, TW50_DATA_DATE } from '../../data/tw50Constituents.js';
 import { MID100_BY_CODE, MID100_DATA_DATE } from '../../data/twMid100Constituents.js';
 import { TOP10_CODES, liveMarketMapQuotes, pctFromPrevClose, trendClass as c, weightedAverage } from '../../services/quoteUtils.js';
+import { HIGH_LOW_DAYS } from '../../services/marketBreadth.js';
+import { indexContributions, recentAverage, topWeightSummary } from '../../services/marketOverview.js';
 import { drawBars, drawCategoryCandle, drawSectorPie } from './page2Draw.js';
 
 const LIMIT_FALLBACK_PCT = 9.8;
@@ -212,6 +214,41 @@ function buildCombinedAttackStats(marketMap) {
   return { up, down, limitUp, limitDown };
 }
 
+const fmt = (value, digits = 2) => (Number.isFinite(value) ? value.toLocaleString('zh-TW', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '--');
+const signed = (value, digits = 2) => (Number.isFinite(value) ? `${value > 0 ? '+' : ''}${fmt(value, digits)}` : '--');
+const ratioText = (a, b) => `<span class="metric-up">${a ?? '--'}</span> : <span class="metric-down">${b ?? '--'}</span>`;
+const pctOf = (count, total) => (total ? ` (${((count / total) * 100).toFixed(1)}%)` : '');
+const taipeiDate = (unixSeconds) => new Date((unixSeconds + 8 * 3600) * 1000).toISOString().slice(0, 10);
+
+// 指數列：名稱、現價、漲跌、漲跌幅。
+function indexRow(label, quote, digits = 2) {
+  const price = Number(quote?.price);
+  const change = Number(quote?.change);
+  const pct = Number(quote?.changePct);
+  return `<div class="p2-flow-row"><span>${label}</span><strong class="${c(change)}">${fmt(price, digits)} <small>${signed(change, digits)} ${Number.isFinite(pct) ? `${signed(pct)}%` : ''}</small></strong></div>`;
+}
+
+// 一個市場（上市／上櫃）的漲跌停分布、創 N 日高低、站上均線家數（services/marketBreadth.js 算好的統計）。
+function breadthBlock(label, b) {
+  if (!b) return `<div class="p2-ov-title">${label}</div><div class="p2-flow-row"><span>統計中…</span></div>`;
+  return `
+    <div class="p2-ov-title">${label}（${b.total} 檔）</div>
+    <div class="p2-ov-dist">
+      <span class="metric-down">跌停<b>${b.limitDown}</b></span><span class="metric-down">下跌<b>${b.down}</b></span>
+      <span>平盤<b>${b.flat}</b></span><span class="metric-up">上漲<b>${b.up}</b></span><span class="metric-up">漲停<b>${b.limitUp}</b></span>
+    </div>
+    <div class="p2-ov-grid" title="創高：現價高於前 N 日收盤的最高；創低：低於最低（以收盤價計）">
+      <span>創高 : 創低</span><span></span>
+      ${HIGH_LOW_DAYS.map((n) => `<span>${n} 日</span><span>${ratioText(b.newHigh[n], b.newLow[n])}</span>`).join('')}
+    </div>
+    <div class="p2-ov-grid">
+      <span>站上週線</span><span>${b.above.week}${pctOf(b.above.week, b.withHistory)}</span>
+      <span>站上月線</span><span>${b.above.month}${pctOf(b.above.month, b.withHistory)}</span>
+      <span>站上季線</span><span>${b.above.quarter}${pctOf(b.above.quarter, b.withHistory)}</span>
+      <span>多頭排列</span><span>${b.bullish}${pctOf(b.bullish, b.withHistory)}</span>
+    </div>`;
+}
+
 // mount：建立頁面並回傳清理函式（由 app.js 的路由在離開頁面時呼叫）。
 export function mount(container) {
   container.innerHTML = `
@@ -229,8 +266,8 @@ export function mount(container) {
   const center = container.querySelector('#p2-center');
   const bottom = container.querySelector('#p2-bottom');
 
-  const p1 = new Panel(left, { badge: '1', title: '加權/台指/價差' }); p1.root.classList.add('p2-resize');
-  p1.setContent('<div class="p2-flow" id="p2-main"></div>');
+  const p1 = new Panel(left, { badge: '1', title: '市場概況' }); p1.root.classList.add('p2-resize');
+  p1.setContent('<div class="p2-flow" id="p2-main"></div><div class="p2-flow p2-overview" id="p2-overview"></div>');
 
   const p4 = new Panel(center, { badge: '2', title: '時鐘與多空攻擊' }); p4.root.classList.add('p2-resize');
   const p5 = new Panel(center, { badge: '3', title: '類股強弱' }); p5.root.classList.add('p2-resize');
@@ -326,12 +363,42 @@ export function mount(container) {
     const spread = hasFutures && Number.isFinite(Number(t.price)) ? +(f.price - t.price).toFixed(2) : null;
     const volEstimate = t.volEstimate == null ? NaN : Number(t.volEstimate);
 
+    const extras = store.get('indexExtras') || {};
     container.querySelector('#p2-main').innerHTML = `
-      <div class="p2-flow-row"><span>加權指數</span><strong class="${c(t.change)}">${t.price ?? '--'} / ${t.change ?? '--'}</strong></div>
-      <div class="p2-flow-row"><span>台指期</span><strong class="${c(hasFutures ? f.change : null)}">${hasFutures ? `${f.price} / ${f.change}` : '--'}</strong></div>
+      ${indexRow('加權指數', t)}
+      ${indexRow('櫃買指數', extras.otc)}
+      ${indexRow('台指期', hasFutures ? f : null, 0)}
       <div class="p2-flow-row"><span>價差</span><strong class="${c(spread)}">${spread ?? '--'}</strong></div>
+      ${indexRow('台指 VIX', extras.vix)}
     `;
     container.querySelector('#p2-vol-e').textContent = Number.isFinite(volEstimate) ? Math.round(volEstimate).toLocaleString('zh-TW') : '--';
+  };
+
+  // 盤面摘要＋上市／上櫃寬度統計（公開資料來源；其他來源顯示「--」）。
+  const renderOverview = () => {
+    const t = store.get('taiex');
+    const contributions = indexContributions(liveMarketMapQuotes().values(), t.prevClose);
+    const tsmc = contributions.find((row) => row.code === '2330');
+    const top20 = topWeightSummary(contributions, 20);
+    const today = taipeiDate(Date.now() / 1000);
+    const avgAmount = recentAverage((store.get('marketAmountHistory') || []).filter((row) => row.date < today).map((row) => row.amountYi));
+    // 振幅％＝(高－低)÷昨收；20 日均振幅用加權日 K（不含今天）。
+    const daily = (store.get('productDaily')?.index?.candles || []).filter((row) => taipeiDate(row.time) < today);
+    const ampPcts = daily.slice(1).map((row, i) => ((row.high - row.low) / daily[i].close) * 100);
+    const ampToday = t.prevClose ? ((t.high - t.low) / t.prevClose) * 100 : NaN;
+    const breadth = store.get('marketBreadth');
+    const tse = breadth?.tse;
+    container.querySelector('#p2-overview').innerHTML = `
+      <div class="p2-ov-title">盤面摘要</div>
+      <div class="p2-flow-row"><span>台積電貢獻</span><strong class="${c(tsmc?.points)}">${signed(tsmc?.points)}</strong></div>
+      <div class="p2-flow-row"><span>權值前 20 貢獻</span><strong class="${c(top20.points)}">${top20.count ? signed(top20.points) : '--'}</strong></div>
+      <div class="p2-flow-row"><span>權值前 20 漲跌</span><strong>${top20.count ? ratioText(top20.up, top20.down) : '--'}</strong></div>
+      <div class="p2-flow-row"><span>上市漲跌家數</span><strong>${tse ? ratioText(tse.up, tse.down) : '--'}</strong></div>
+      <div class="p2-flow-row"><span>預估量／20 日均量(億)</span><strong>${fmt(Number(t.volEstimate), 0)} / ${fmt(avgAmount, 0)}</strong></div>
+      <div class="p2-flow-row"><span>振幅／20 日均振幅</span><strong>${Number.isFinite(ampToday) ? `${ampToday.toFixed(2)}%` : '--'} / ${ampPcts.length ? `${recentAverage(ampPcts).toFixed(2)}%` : '--'}</strong></div>
+      ${breadthBlock('上市', tse)}
+      ${breadthBlock('上櫃', breadth?.otc)}
+    `;
   };
 
   const renderAttackGauges = () => {
@@ -387,6 +454,7 @@ export function mount(container) {
 
   renderSourceNote();
   renderMain();
+  renderOverview();
   renderAttackGauges();
   renderPies();
   renderCharts();
@@ -403,6 +471,8 @@ export function mount(container) {
       renderCharts();
     }),
     store.subscribe('futuresFull', renderMain),
+    store.subscribe('indexExtras', renderMain),
+    ...['taiex', 'marketMap', 'marketBreadth', 'marketAmountHistory', 'productDaily'].map((key) => store.subscribe(key, renderOverview)),
     store.subscribe('topStocks', renderCharts),
     store.subscribe('marketMap', () => {
       renderAttackGauges();

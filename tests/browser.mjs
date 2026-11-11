@@ -85,6 +85,8 @@ const MEASURE = `(() => {
   return JSON.stringify({
     header: Math.round(document.querySelector('.shell__header').getBoundingClientRect().height),
     scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    // app.js 掛載頁面失敗時只顯示這行字（例外被接住，不會進 exceptionThrown）。
+    loadFailed: /Failed to load page/.test(document.querySelector('#app')?.textContent || ''),
     outside
   });
 })()`;
@@ -129,6 +131,7 @@ try {
       await sleep(2500);
       const m = JSON.parse(await evaluate(MEASURE));
       const problems = [];
+      if (m.loadFailed) problems.push('頁面掛載失敗（Failed to load）');
       if (m.scrollX > 0) problems.push(`橫向捲軸 ${m.scrollX}px`);
       if (m.outside.length) problems.push(`超出畫面 ${m.outside.join(', ')}`);
       if (m.header > size.maxHeader) problems.push(`標頭 ${m.header}px > ${size.maxHeader}px`);
